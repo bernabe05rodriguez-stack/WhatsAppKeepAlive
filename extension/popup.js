@@ -30,6 +30,7 @@
     btnJoin:         document.getElementById('btn-join'),
     passwordError:   document.getElementById('password-error'),
     connectedRoomName: document.getElementById('connected-room-name'),
+    userCount:    document.getElementById('user-count'),
     lastAction:   document.getElementById('last-action'),
     btnLeave:     document.getElementById('btn-leave'),
   };
@@ -197,6 +198,13 @@
   function showConnectedView(state) {
     els.connectedRoomName.textContent = selectedRoom.name || state?.roomName || 'Sala';
     els.lastAction.textContent = state?.lastAction || '';
+    updateUserCount(state?.userCount);
+  }
+
+  function updateUserCount(count) {
+    if (count !== undefined && count !== null) {
+      els.userCount.textContent = count + (count === 1 ? ' usuario' : ' usuarios');
+    }
   }
 
   els.btnLeave.addEventListener('click', async () => {
@@ -220,6 +228,7 @@
           els.connectedRoomName.textContent = data.roomName;
         }
         if (data.lastAction) els.lastAction.textContent = data.lastAction;
+        if (data.userCount !== undefined) updateUserCount(data.userCount);
         if (!steps.connected.classList.contains('active')) {
           showConnectedView(data);
           showStep('connected');

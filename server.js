@@ -494,6 +494,18 @@ function getUserCountInRoom(roomId) {
   return count;
 }
 
+function broadcastRoomUserCount(roomId) {
+  const count = getUserCountInRoom(roomId);
+  const msg = JSON.stringify({ type: 'room-user-count', data: { roomId, userCount: count } });
+  for (const [, user] of extUsers) {
+    if (user.roomId === roomId) {
+      try {
+        if (user.ws.readyState === 1) user.ws.send(msg);
+      } catch (_) {}
+    }
+  }
+}
+
 function kickUsersFromRoom(roomId) {
   for (const [phone, user] of extUsers) {
     if (user.roomId === roomId) {
@@ -833,11 +845,12 @@ wssExt.on('connection', (ws) => {
 
           ws.send(JSON.stringify({
             type: 'joined',
-            data: { success: true, roomName: room.name }
+            data: { success: true, roomName: room.name, userCount: getUserCountInRoom(roomId) }
           }));
 
           logActivity(roomId, 'join', `User ${phone} joined room "${room.name}"`);
           broadcastStatus();
+          broadcastRoomUserCount(roomId);
           console.log(`[WS-EXT] ${phone} joined room "${room.name}" (${roomId})`);
           break;
         }
@@ -857,6 +870,7 @@ wssExt.on('connection', (ws) => {
             }
 
             broadcastStatus();
+            broadcastRoomUserCount(roomId);
             console.log(`[WS-EXT] ${userPhone} left room ${roomId}`);
           }
           userPhone = null;
@@ -919,6 +933,7 @@ wssExt.on('connection', (ws) => {
       }
 
       broadcastStatus();
+      broadcastRoomUserCount(roomId);
       console.log(`[WS-EXT] ${userPhone} disconnected`);
     }
   });

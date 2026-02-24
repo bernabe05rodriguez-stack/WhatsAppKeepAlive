@@ -16,8 +16,8 @@ let state = {
   waTabId: null,
   waLoggedIn: false,
   ws: null,
-  pendingMessage: null, // { targetPhone, message }
   lastAction: '',
+  userCount: 0,
 };
 
 // Track pending room requests so we can respond to popup
@@ -163,11 +163,12 @@ function handleServerMessage(msg) {
       if (data.success) {
         state.connected = true;
         state.roomName = data.roomName || state.roomName;
+        state.userCount = data.userCount || 0;
         state.lastAction = 'Conectado a ' + state.roomName;
         saveState();
         openWATab();
         if (pendingJoinCallback) {
-          pendingJoinCallback({ success: true, roomName: state.roomName });
+          pendingJoinCallback({ success: true, roomName: state.roomName, userCount: state.userCount });
           pendingJoinCallback = null;
         }
       } else {
@@ -186,27 +187,30 @@ function handleServerMessage(msg) {
     case 'send-message': {
       const data = msg.data || {};
       log('Send message request:', data.targetPhone);
-      state.pendingMessage = {
-        targetPhone: data.targetPhone,
-        message: data.message,
-      };
       state.lastAction = 'Enviando mensaje a +' + data.targetPhone + '...';
       notifyPopup({ type: 'state-update', data: getStateForPopup() });
 
-      // Navigate WA tab to the send URL
+      // Send directly to content script (no page reload)
       if (state.waTabId) {
-        const url = 'https://web.whatsapp.com/send?phone=' + encodeURIComponent(data.targetPhone);
-        chrome.tabs.update(state.waTabId, { url }, () => {
-          if (chrome.runtime.lastError) {
-            log('Error updating WA tab:', chrome.runtime.lastError.message);
-            // Tab might have been closed
-            state.waTabId = null;
-            openWATab(url);
-          }
+        chrome.tabs.sendMessage(state.waTabId, {
+          type: 'send-message',
+          data: { targetPhone: data.targetPhone, message: data.message },
+        }).catch(() => {
+          log('Content script not responding, message lost');
+          wsSend({ type: 'message-sent', data: { success: false } });
         });
       } else {
-        const url = 'https://web.whatsapp.com/send?phone=' + encodeURIComponent(data.targetPhone);
-        openWATab(url);
+        log('No WA tab, cannot send message');
+        wsSend({ type: 'message-sent', data: { success: false } });
+      }
+      break;
+    }
+
+    case 'room-user-count': {
+      const data = msg.data || {};
+      if (data.roomId === state.roomId) {
+        state.userCount = data.userCount || 0;
+        notifyPopup({ type: 'state-update', data: getStateForPopup() });
       }
       break;
     }
@@ -256,6 +260,7 @@ function getStateForPopup() {
     roomName: state.roomName,
     waLoggedIn: state.waLoggedIn,
     lastAction: state.lastAction,
+    userCount: state.userCount,
   };
 }
 
@@ -426,7 +431,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.roomName = '';
       state.roomPassword = '';
       state.lastAction = '';
-      state.pendingMessage = null;
       saveState();
 
       state.waTabId = null;
@@ -443,18 +447,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     // --- From content script ---
-    case 'get-pending': {
-      // Capture tab ID from content script
-      if (sender.tab && sender.tab.id && !state.waTabId) {
-        state.waTabId = sender.tab.id;
-        log('Captured WA tab ID:', state.waTabId);
-      }
-      const pending = state.pendingMessage;
-      state.pendingMessage = null;
-      sendResponse(pending || {});
-      return false;
-    }
-
     case 'message-result': {
       const success = msg.success;
       log('Message result:', success);

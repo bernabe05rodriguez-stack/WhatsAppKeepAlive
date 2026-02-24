@@ -314,6 +314,17 @@ body {
   color: #f39c12;
 }
 
+/* ===== USER COUNT ===== */
+.user-count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a7a3a;
+  background: rgba(37, 211, 102, 0.15);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
 /* ===== LAST ACTION ===== */
 .last-action {
   font-size: 12px;
