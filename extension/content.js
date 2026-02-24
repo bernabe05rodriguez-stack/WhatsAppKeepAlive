@@ -6,6 +6,9 @@
 'use strict';
 
 (function () {
+  // Capture URL immediately at injection time, BEFORE WhatsApp's SPA routing changes it
+  const INITIAL_URL = window.location.href;
+
   const LOG_PREFIX = '[WKA]';
 
   function log(...args) {
@@ -130,46 +133,75 @@
   // =============================================
 
   async function handleSendUrl() {
-    const url = new URL(window.location.href);
+    // Use INITIAL_URL captured at injection time, NOT window.location.href
+    // WhatsApp's SPA routing may have already changed the URL by now
+    const url = new URL(INITIAL_URL);
     if (!url.pathname.includes('/send')) return;
 
     const phone = url.searchParams.get('phone');
     const text = url.searchParams.get('text');
     if (!phone) return;
 
-    log('URL de envio detectada - phone:', phone);
+    log('URL de envio detectada (initial URL) - phone:', phone);
     showSendingOverlay();
 
     try {
-      // Esperar a que WhatsApp precargue el texto en el input
-      const input = await waitForInputWithText(25000);
-      if (!input) {
-        log('No se encontro input con texto precargado');
-        hideSendingOverlay();
-        reportResult(false);
-        return;
-      }
+      // Intentar 1: Esperar a que WhatsApp precargue el texto en el input
+      let input = await waitForInputWithText(15000);
 
-      // Esperar un toque mas y buscar el boton de enviar
-      await sleep(500);
-      const sendBtn = await waitForSendButton(10000);
-      if (sendBtn) {
-        sendBtn.click();
+      if (input) {
+        // Texto precargado encontrado, clickear enviar
+        log('Texto precargado encontrado, enviando...');
+        await sleep(500);
+        const sendBtn = await waitForSendButton(10000);
+        if (sendBtn) {
+          sendBtn.click();
+          await sleep(1500);
+          hideSendingOverlay();
+          log('Mensaje enviado via URL (click)');
+          reportResult(true);
+          return;
+        }
+        // Fallback: Enter
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
+        }));
         await sleep(1500);
         hideSendingOverlay();
-        log('Mensaje enviado via URL');
+        log('Mensaje enviado via URL (Enter fallback)');
         reportResult(true);
         return;
       }
 
-      // Fallback: Enter
-      input.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
-      }));
-      await sleep(1500);
+      // Intentar 2: Si no hay texto precargado pero hay input vacio, escribir directo
+      log('No se encontro texto precargado, intentando type-and-send como fallback...');
+      input = await waitForMessageInput(10000);
+      if (input && text) {
+        input.focus();
+        await sleep(300);
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        await sleep(100);
+        document.execCommand('insertText', false, text);
+        await sleep(500);
+        const sendBtn = await waitForSendButton(5000);
+        if (sendBtn) {
+          sendBtn.click();
+        } else {
+          input.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
+          }));
+        }
+        await sleep(1500);
+        hideSendingOverlay();
+        log('Mensaje enviado via URL (type-and-send fallback)');
+        reportResult(true);
+        return;
+      }
+
+      log('No se pudo enviar: sin input disponible');
       hideSendingOverlay();
-      log('Mensaje enviado via Enter (fallback URL)');
-      reportResult(true);
+      reportResult(false);
     } catch (e) {
       log('Error en handleSendUrl:', e);
       hideSendingOverlay();

@@ -540,8 +540,8 @@ async function runConversation(roomId, userA, userB, conv) {
   broadcastStatus();
 }
 
-const MESSAGE_TIMEOUT_MS = 15000; // 15 seconds timeout per message
-const MAX_RETRIES = 2; // retry up to 2 times
+const MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout (WA Web takes 10-30s to load)
+const MAX_RETRIES = 1; // retry once (avoid duplicate sends in extension queue)
 
 /**
  * Sends a message instruction to the extension and waits for confirmation.

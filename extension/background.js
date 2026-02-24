@@ -28,6 +28,8 @@ let pendingJoinCallback = null;
 // Message queue to avoid concurrent sends
 let messageQueue = [];
 let isSendingMessage = false;
+let sendingSafetyTimer = null;
+const SEND_SAFETY_TIMEOUT = 45000; // 45s max wait for content script response
 
 // --- Logging ---
 function log(...args) {
@@ -155,7 +157,29 @@ function navigateToSendUrl(phone, message) {
     state.waTabId = null;
     state.currentChatPhone = null;
     wsSend({ type: 'message-sent', data: { success: false } });
+    // Reset queue so next messages can proceed
+    clearSafetyTimer();
+    isSendingMessage = false;
+    processMessageQueue();
   });
+}
+
+function clearSafetyTimer() {
+  if (sendingSafetyTimer) {
+    clearTimeout(sendingSafetyTimer);
+    sendingSafetyTimer = null;
+  }
+}
+
+function startSafetyTimer() {
+  clearSafetyTimer();
+  sendingSafetyTimer = setTimeout(() => {
+    log('SAFETY TIMEOUT: no message-result received in', SEND_SAFETY_TIMEOUT, 'ms, resetting queue');
+    sendingSafetyTimer = null;
+    wsSend({ type: 'message-sent', data: { success: false } });
+    isSendingMessage = false;
+    processMessageQueue();
+  }, SEND_SAFETY_TIMEOUT);
 }
 
 // --- Message Queue ---
@@ -166,12 +190,16 @@ function processMessageQueue() {
   isSendingMessage = true;
   const data = messageQueue.shift();
 
+  // Start safety timer to prevent permanent queue lock
+  startSafetyTimer();
+
   state.lastAction = 'Enviando mensaje a +' + data.targetPhone + '...';
   notifyPopup({ type: 'state-update', data: getStateForPopup() });
 
   if (!state.waTabId) {
     log('No WA tab, cannot send message');
     wsSend({ type: 'message-sent', data: { success: false } });
+    clearSafetyTimer();
     isSendingMessage = false;
     processMessageQueue(); // process next
     return;
@@ -191,12 +219,10 @@ function processMessageQueue() {
       state.currentChatPhone = null;
       navigateToSendUrl(phone, data.message);
     });
-    // isSendingMessage will be reset by message-result handler
   } else {
     // Chat diferente → navegar a URL (una sola recarga)
     log('Nuevo destino, navegando via URL');
     navigateToSendUrl(phone, data.message);
-    // isSendingMessage will be reset by message-result handler
   }
 }
 
@@ -481,9 +507,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.roomPassword = '';
       state.lastAction = '';
       state.currentChatPhone = null;
-      // Clear message queue
+      // Clear message queue and safety timer
       messageQueue = [];
       isSendingMessage = false;
+      clearSafetyTimer();
       saveState();
 
       state.waTabId = null;
@@ -503,6 +530,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'message-result': {
       const success = msg.success;
       log('Message result:', success);
+      clearSafetyTimer();
       state.lastAction = success
         ? 'Mensaje enviado correctamente'
         : 'Error al enviar mensaje';
