@@ -150,9 +150,15 @@
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'send-now') {
-      // Background pide enviar un mensaje, procesarlo
       handlePendingMessage();
       sendResponse({ ok: true });
+    }
+    if (msg.type === 'check-status') {
+      // Responder con el estado actual de WhatsApp Web
+      const searchBox = document.querySelector('[data-tab="3"]');
+      const sidePanel = document.querySelector('#side');
+      const isReady = !!(searchBox || sidePanel);
+      sendResponse({ status: isReady ? 'ready' : 'not-ready' });
     }
     return false;
   });
