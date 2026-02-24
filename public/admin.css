@@ -26,6 +26,10 @@
 }
 
 /* ---------- Reset & Base ---------- */
+[hidden] {
+  display: none !important;
+}
+
 *,
 *::before,
 *::after {
@@ -788,10 +792,6 @@ body {
   padding: 1rem;
   opacity: 0;
   animation: fadeIn 0.2s ease forwards;
-}
-
-.modal-overlay[hidden] {
-  display: none;
 }
 
 @keyframes fadeIn {
