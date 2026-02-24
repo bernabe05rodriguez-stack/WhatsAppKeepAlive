@@ -190,15 +190,18 @@ function handleServerMessage(msg) {
       state.lastAction = 'Enviando mensaje a +' + data.targetPhone + '...';
       notifyPopup({ type: 'state-update', data: getStateForPopup() });
 
-      // Send directly to content script (no page reload)
+      // Inyectar URL con telefono + mensaje: WhatsApp abre el chat y precarga el texto
       if (state.waTabId) {
-        chrome.tabs.sendMessage(state.waTabId, {
-          type: 'send-message',
-          data: { targetPhone: data.targetPhone, message: data.message },
-        }).catch(() => {
-          log('Content script not responding, message lost');
+        const phone = data.targetPhone.replace(/[^0-9]/g, '');
+        const sendUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(data.message);
+        log('Navigating WA tab to send URL');
+        chrome.tabs.update(state.waTabId, { url: sendUrl }).catch(() => {
+          log('Failed to navigate WA tab');
+          state.waTabId = null;
           wsSend({ type: 'message-sent', data: { success: false } });
         });
+        // Content script detecta la URL /send y clickea enviar automaticamente
+        // El resultado llega via message-result
       } else {
         log('No WA tab, cannot send message');
         wsSend({ type: 'message-sent', data: { success: false } });

@@ -1,5 +1,5 @@
 // content.js - WhatsApp KeepAlive Content Script
-// Envia mensajes sin recargar la pagina usando la busqueda de WhatsApp Web.
+// Detecta URL de envio (/send?phone=X&text=Y) y envia el mensaje automaticamente.
 
 'use strict';
 
@@ -45,9 +45,15 @@
     timeout = timeout || 30000;
     const start = Date.now();
     while (Date.now() - start < timeout) {
+      // Input de mensaje (aparece en URLs /send)
+      const msgInput = document.querySelector('[contenteditable="true"][data-tab="10"]')
+        || document.querySelector('#main [contenteditable="true"]');
+      if (msgInput) return 'ready';
+      // Search box o side panel (WA Web normal)
       const searchBox = document.querySelector('[data-tab="3"]');
       const sidePanel = document.querySelector('#side');
       if (searchBox || sidePanel) return 'ready';
+      // QR code (no logueado)
       const qr = document.querySelector('[data-ref]') || document.querySelector('canvas');
       if (qr) return 'not-logged-in';
       await sleep(1000);
@@ -55,165 +61,70 @@
     return 'timeout';
   }
 
-  // --- Buscar contacto por numero (sin recargar pagina) ---
-
-  async function openChatBySearch(phoneNumber) {
-    // Asegurar formato con + para WhatsApp Web
-    const searchPhone = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber;
-
-    // Buscar el search box en el sidebar
-    let searchBox = document.querySelector('[data-tab="3"]');
-    if (!searchBox) {
-      searchBox = document.querySelector('#side [contenteditable="true"]');
-    }
-    if (!searchBox) {
-      log('No se encontro search box');
-      return false;
-    }
-
-    // Limpiar y escribir el numero
-    searchBox.focus();
-    await sleep(300);
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    await sleep(100);
-    document.execCommand('insertText', false, searchPhone);
-    await sleep(3000); // Esperar resultados de busqueda
-
-    // Buscar resultado clickeable (multiples selectores para distintas versiones de WA Web)
-    const resultSelectors = [
-      '[data-testid="cell-frame-container"]',
-      '#side .matched-text',
-      '#side [role="listitem"]',
-      '#side [data-testid="chat-list"] [role="row"]',
-      '#side [role="option"]',
-      '#side ._ajv6',
-    ];
-
-    for (const sel of resultSelectors) {
-      const results = document.querySelectorAll(sel);
-      for (const result of results) {
-        const clickTarget = result.closest('[role="listitem"]') || result.closest('[role="row"]') || result.closest('[role="option"]') || result;
-        clickTarget.click();
-        await sleep(1500);
-
-        // Verificar que se abrio un chat (hay input de mensaje)
-        const msgInput = await waitForMessageInput(5000);
-        if (msgInput) {
-          // Limpiar busqueda
-          searchBox.focus();
-          await sleep(100);
-          document.execCommand('selectAll', false, null);
-          document.execCommand('delete', false, null);
-          searchBox.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true,
-          }));
-          return true;
-        }
-      }
-    }
-
-    // Fallback: si la busqueda no funciono, intentar via URL (recarga la pagina)
-    log('Busqueda fallo, intentando via URL...');
-    const urlPhone = phoneNumber.replace(/[^0-9]/g, '');
-    window.location.href = 'https://web.whatsapp.com/send?phone=' + urlPhone;
-    await sleep(5000);
-    const input = await waitForMessageInput(20000);
-    if (input) return true;
-
-    log('No se encontro resultado para:', phoneNumber);
-    return false;
-  }
-
-  // --- Esperar input de mensaje ---
-
-  async function waitForMessageInput(timeout) {
-    timeout = timeout || 15000;
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      let el = document.querySelector('[contenteditable="true"][data-tab="10"]');
-      if (el) return el;
-      el = document.querySelector('#main [contenteditable="true"]');
-      if (el) return el;
-      const footer = document.querySelector('footer');
-      if (footer) {
-        el = footer.querySelector('[contenteditable="true"]');
-        if (el) return el;
-      }
-      await sleep(500);
-    }
-    return null;
-  }
-
   // --- Esperar boton enviar ---
 
   async function waitForSendButton(timeout) {
-    timeout = timeout || 5000;
+    timeout = timeout || 15000;
     const start = Date.now();
     while (Date.now() - start < timeout) {
+      // Boton de enviar por data-testid
       let btn = document.querySelector('[data-testid="send"]');
       if (btn) return btn;
+      // Boton de enviar por icono
       const span = document.querySelector('span[data-icon="send"]');
       if (span) return span.closest('button') || span;
-      await sleep(300);
+      await sleep(500);
     }
     return null;
   }
 
-  // --- Enviar mensaje completo ---
+  // --- Handle /send URL (envio automatico) ---
 
-  async function sendMessageToPhone(targetPhone, message) {
-    log('Enviando mensaje a:', targetPhone);
+  async function handleSendUrl() {
+    const url = new URL(window.location.href);
+    if (!url.pathname.includes('/send')) return;
+
+    const phone = url.searchParams.get('phone');
+    const text = url.searchParams.get('text');
+    if (!phone) return;
+
+    log('URL de envio detectada - phone:', phone, 'text:', text ? text.substring(0, 40) + '...' : '(vacio)');
     showSendingOverlay();
 
     try {
-      // Delay aleatorio para simular humano
-      await sleep(1000 + Math.random() * 2000);
+      // Esperar a que WhatsApp cargue el chat y precargue el texto
+      await sleep(3000);
 
-      // Intentar abrir el chat por busqueda (sin recargar)
-      const chatOpened = await openChatBySearch(targetPhone);
-
-      if (!chatOpened) {
-        log('Busqueda fallo, no se pudo abrir el chat');
-        hideSendingOverlay();
-        chrome.runtime.sendMessage({ type: 'message-result', success: false });
-        return;
-      }
-
-      // Esperar el campo de texto del chat
-      const input = await waitForMessageInput(10000);
-      if (!input) {
-        log('No se encontro input de mensaje');
-        hideSendingOverlay();
-        chrome.runtime.sendMessage({ type: 'message-result', success: false });
-        return;
-      }
-
-      // Escribir mensaje
-      input.focus();
-      await sleep(300);
-      document.execCommand('selectAll', false, null);
-      document.execCommand('delete', false, null);
-      await sleep(100);
-      document.execCommand('insertText', false, message);
-      await sleep(500);
-
-      // Enviar
-      const sendBtn = await waitForSendButton(5000);
+      // Esperar al boton de enviar (aparece cuando el texto esta precargado)
+      const sendBtn = await waitForSendButton(20000);
       if (sendBtn) {
         sendBtn.click();
-      } else {
+        await sleep(1500);
+        hideSendingOverlay();
+        log('Mensaje enviado correctamente');
+        try { chrome.runtime.sendMessage({ type: 'message-result', success: true }); } catch (_) {}
+        return;
+      }
+
+      // Fallback: buscar input y presionar Enter
+      const input = document.querySelector('[contenteditable="true"][data-tab="10"]')
+        || document.querySelector('#main [contenteditable="true"]');
+      if (input && input.textContent.trim()) {
         input.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
         }));
+        await sleep(1500);
+        hideSendingOverlay();
+        log('Mensaje enviado via Enter');
+        try { chrome.runtime.sendMessage({ type: 'message-result', success: true }); } catch (_) {}
+        return;
       }
 
-      await sleep(500);
+      log('No se pudo enviar - no se encontro boton de enviar ni texto precargado');
       hideSendingOverlay();
-      log('Mensaje enviado correctamente');
-      chrome.runtime.sendMessage({ type: 'message-result', success: true });
+      try { chrome.runtime.sendMessage({ type: 'message-result', success: false }); } catch (_) {}
     } catch (e) {
-      log('Error enviando mensaje:', e);
+      log('Error en handleSendUrl:', e);
       hideSendingOverlay();
       try { chrome.runtime.sendMessage({ type: 'message-result', success: false }); } catch (_) {}
     }
@@ -222,11 +133,6 @@
   // --- Escuchar mensajes del background ---
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg.type === 'send-message') {
-      const data = msg.data || {};
-      sendMessageToPhone(data.targetPhone, data.message);
-      sendResponse({ ok: true });
-    }
     if (msg.type === 'check-status') {
       const searchBox = document.querySelector('[data-tab="3"]');
       const sidePanel = document.querySelector('#side');
@@ -245,6 +151,11 @@
     try {
       chrome.runtime.sendMessage({ type: 'wa-status', status: status });
     } catch (e) {}
+
+    // Si estamos en una URL /send, enviar automaticamente
+    if (status === 'ready') {
+      await handleSendUrl();
+    }
   }
 
   main().catch((e) => log('Error main:', e));
