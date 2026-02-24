@@ -37,7 +37,7 @@
     btnLeave:     document.getElementById('btn-leave'),
   };
 
-  let selectedRoom = { id: '', name: '' };
+  let selectedRoom = { id: '', name: '', hasPassword: true };
 
   // --- Helpers ---
 
@@ -146,10 +146,17 @@
       card.addEventListener('click', () => {
         selectedRoom.id = room.id;
         selectedRoom.name = room.name || room.id;
-        els.passwordTitle.textContent = selectedRoom.name;
-        els.inputPassword.value = '';
-        hideError(els.passwordError);
-        showStep('password');
+        selectedRoom.hasPassword = room.hasPassword !== false;
+
+        if (selectedRoom.hasPassword) {
+          els.passwordTitle.textContent = selectedRoom.name;
+          els.inputPassword.value = '';
+          hideError(els.passwordError);
+          showStep('password');
+        } else {
+          // Sin contraseña, unirse directo
+          joinRoom('');
+        }
       });
       els.roomsList.appendChild(card);
     });
@@ -159,10 +166,7 @@
 
   els.btnBackPassword.addEventListener('click', () => showStep('rooms'));
 
-  els.btnJoin.addEventListener('click', async () => {
-    const password = els.inputPassword.value;
-    if (!password) { els.inputPassword.focus(); return; }
-
+  async function joinRoom(password) {
     els.btnJoin.disabled = true;
     hideError(els.passwordError);
 
@@ -178,8 +182,20 @@
       showConnectedView(response);
       showStep('connected');
     } else {
+      // Si fallo un join directo (sin password), mostrar paso de password
+      if (!selectedRoom.hasPassword) {
+        els.passwordTitle.textContent = selectedRoom.name;
+        els.inputPassword.value = '';
+        showStep('password');
+      }
       showError(els.passwordError, response?.error || 'Contrasena incorrecta');
     }
+  }
+
+  els.btnJoin.addEventListener('click', async () => {
+    const password = els.inputPassword.value;
+    if (!password) { els.inputPassword.focus(); return; }
+    await joinRoom(password);
   });
 
   // --- Step 4: Conectado ---
@@ -209,7 +225,7 @@
     await sendMsg({ type: 'leave' });
     els.btnLeave.disabled = false;
     await chrome.storage.local.remove(['roomId', 'roomName', 'connected']);
-    selectedRoom = { id: '', name: '' };
+    selectedRoom = { id: '', name: '', hasPassword: true };
     showStep('rooms');
     fetchRooms();
   });

@@ -572,13 +572,13 @@ app.get('/api/rooms', authMiddleware, (req, res) => {
 
 app.post('/api/rooms', authMiddleware, (req, res) => {
   const { name, password, minInterval, maxInterval } = req.body || {};
-  if (!name || !password) {
-    return res.status(400).json({ error: 'name and password are required' });
+  if (!name) {
+    return res.status(400).json({ error: 'name is required' });
   }
   const room = {
     id: genId(),
     name,
-    password,
+    password: password || '',
     minInterval: minInterval || 5,
     maxInterval: maxInterval || 15
   };
@@ -768,7 +768,8 @@ wssExt.on('connection', (ws) => {
         case 'get-rooms': {
           const roomList = Array.from(rooms.values()).map(r => ({
             id: r.id,
-            name: r.name
+            name: r.name,
+            hasPassword: !!r.password
           }));
           ws.send(JSON.stringify({ type: 'rooms', data: roomList }));
           break;
@@ -778,10 +779,10 @@ wssExt.on('connection', (ws) => {
         case 'join': {
           const { phone, roomId, password } = msg.data || {};
 
-          if (!phone || !roomId || !password) {
+          if (!phone || !roomId) {
             ws.send(JSON.stringify({
               type: 'joined',
-              data: { success: false, error: 'phone, roomId, and password are required' }
+              data: { success: false, error: 'phone and roomId are required' }
             }));
             break;
           }
@@ -795,7 +796,7 @@ wssExt.on('connection', (ws) => {
             break;
           }
 
-          if (room.password !== password) {
+          if (room.password && room.password !== password) {
             ws.send(JSON.stringify({
               type: 'joined',
               data: { success: false, error: 'Invalid password' }
