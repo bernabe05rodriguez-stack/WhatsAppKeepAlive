@@ -330,18 +330,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
     // --- From popup ---
     case 'get-state': {
-      // If connected but don't know WA status, check if a WA tab exists
-      if (state.connected && !state.waLoggedIn) {
-        chrome.tabs.query({ url: 'https://web.whatsapp.com/*' }, (tabs) => {
-          if (tabs && tabs.length > 0) {
-            state.waTabId = tabs[0].id;
-            state.waLoggedIn = true;
-            notifyPopup({ type: 'state-update', data: getStateForPopup() });
-          }
-        });
-      }
-      sendResponse(getStateForPopup());
-      return false;
+      // Check if WA tab exists BEFORE responding
+      chrome.tabs.query({ url: 'https://web.whatsapp.com/*' }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          state.waTabId = tabs[0].id;
+          state.waLoggedIn = true;
+        }
+        sendResponse(getStateForPopup());
+      });
+      return true; // async response
     }
 
     case 'set-config': {
