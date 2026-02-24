@@ -7,26 +7,30 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <!-- STEP 1: CONFIG -->
-  <div id="step-config" class="step active">
+  <!-- STEP 1: TELEFONO -->
+  <div id="step-phone" class="step active">
     <div class="header">
       <h1>WhatsApp KeepAlive</h1>
+      <button id="btn-settings" class="btn-gear" title="Configuracion">&#9881;</button>
     </div>
     <div class="body">
       <div class="form-group">
-        <label for="input-server">URL del servidor</label>
-        <input type="url" id="input-server" placeholder="https://tu-servidor.easypanel.host" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label for="input-phone">Numero con codigo de pais</label>
+        <label for="input-phone">Tu numero de WhatsApp (con codigo de pais)</label>
         <input type="tel" id="input-phone" placeholder="5491112345678" autocomplete="off">
+      </div>
+      <!-- Settings oculto -->
+      <div id="settings-area" class="settings-area hidden">
+        <div class="form-group">
+          <label for="input-server">URL del servidor</label>
+          <input type="url" id="input-server" placeholder="https://tu-servidor.easypanel.host" autocomplete="off">
+        </div>
       </div>
       <button id="btn-continue" class="btn btn-primary">Continuar</button>
       <p class="version-text">Version 1.0</p>
     </div>
   </div>
 
-  <!-- STEP 2: ROOMS -->
+  <!-- STEP 2: SALAS -->
   <div id="step-rooms" class="step">
     <div class="header">
       <button id="btn-back-rooms" class="btn-back" title="Volver">&#8592;</button>
@@ -42,7 +46,7 @@
     </div>
   </div>
 
-  <!-- STEP 3: PASSWORD -->
+  <!-- STEP 3: CONTRASENA -->
   <div id="step-password" class="step">
     <div class="header">
       <button id="btn-back-password" class="btn-back" title="Volver">&#8592;</button>
@@ -58,7 +62,7 @@
     </div>
   </div>
 
-  <!-- STEP 4: CONNECTED -->
+  <!-- STEP 4: CONECTADO -->
   <div id="step-connected" class="step">
     <div class="header">
       <h1 id="connected-room-name">Sala</h1>
@@ -70,8 +74,7 @@
           <span class="status-text">Conectado</span>
         </div>
       </div>
-
-      <div class="wa-status-card" id="wa-status-card">
+      <div class="wa-status-card">
         <div id="wa-status-ok" class="wa-status-row hidden">
           <span class="wa-icon wa-icon-ok">&#10003;</span>
           <span>WhatsApp Web activo</span>
@@ -81,11 +84,8 @@
           <span>Inicia sesion en WhatsApp Web</span>
         </div>
       </div>
-
       <button id="btn-open-wa" class="btn btn-secondary">Abrir WhatsApp Web</button>
-
       <div id="last-action" class="last-action"></div>
-
       <button id="btn-leave" class="btn btn-danger">Salir de la sala</button>
     </div>
   </div>

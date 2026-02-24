@@ -3,49 +3,47 @@
 (function () {
   'use strict';
 
-  // --- DOM References ---
+  // URL del servidor por defecto (hardcodeada)
+  const DEFAULT_SERVER = 'https://redhawk-whatsapp-keepalive.bm6z1s.easypanel.host';
+
+  // --- DOM ---
   const steps = {
-    config:    document.getElementById('step-config'),
+    phone:     document.getElementById('step-phone'),
     rooms:     document.getElementById('step-rooms'),
     password:  document.getElementById('step-password'),
     connected: document.getElementById('step-connected'),
   };
 
   const els = {
-    // Step 1
-    inputServer:   document.getElementById('input-server'),
     inputPhone:    document.getElementById('input-phone'),
+    inputServer:   document.getElementById('input-server'),
+    btnSettings:   document.getElementById('btn-settings'),
+    settingsArea:  document.getElementById('settings-area'),
     btnContinue:   document.getElementById('btn-continue'),
-    // Step 2
     btnBackRooms:  document.getElementById('btn-back-rooms'),
     roomsLoading:  document.getElementById('rooms-loading'),
     roomsList:     document.getElementById('rooms-list'),
     roomsError:    document.getElementById('rooms-error'),
-    // Step 3
     btnBackPassword: document.getElementById('btn-back-password'),
     passwordTitle:   document.getElementById('password-title'),
     inputPassword:   document.getElementById('input-password'),
     btnJoin:         document.getElementById('btn-join'),
     passwordError:   document.getElementById('password-error'),
-    // Step 4
     connectedRoomName: document.getElementById('connected-room-name'),
-    waStatusOk:        document.getElementById('wa-status-ok'),
-    waStatusWarn:       document.getElementById('wa-status-warn'),
-    btnOpenWa:         document.getElementById('btn-open-wa'),
-    lastAction:        document.getElementById('last-action'),
-    btnLeave:          document.getElementById('btn-leave'),
+    waStatusOk:   document.getElementById('wa-status-ok'),
+    waStatusWarn:  document.getElementById('wa-status-warn'),
+    btnOpenWa:    document.getElementById('btn-open-wa'),
+    lastAction:   document.getElementById('last-action'),
+    btnLeave:     document.getElementById('btn-leave'),
   };
 
-  // --- State ---
   let selectedRoom = { id: '', name: '' };
 
   // --- Helpers ---
 
   function showStep(name) {
     Object.values(steps).forEach(s => s.classList.remove('active'));
-    if (steps[name]) {
-      steps[name].classList.add('active');
-    }
+    if (steps[name]) steps[name].classList.add('active');
   }
 
   function showError(el, msg) {
@@ -60,67 +58,65 @@
 
   function sendMsg(msg) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(msg, (response) => {
-        resolve(response);
-      });
+      chrome.runtime.sendMessage(msg, (response) => resolve(response));
     });
   }
+
+  // --- Toggle settings ---
+
+  els.btnSettings.addEventListener('click', () => {
+    els.settingsArea.classList.toggle('hidden');
+  });
 
   // --- Init ---
 
   async function init() {
-    // Load saved config
-    const stored = await chrome.storage.local.get(['serverUrl', 'phone', 'roomId', 'roomName']);
+    const stored = await chrome.storage.local.get(['serverUrl', 'phone']);
 
-    if (stored.serverUrl) els.inputServer.value = stored.serverUrl;
+    // Precargar servidor (default si no hay guardado)
+    els.inputServer.value = stored.serverUrl || DEFAULT_SERVER;
     if (stored.phone) els.inputPhone.value = stored.phone;
 
-    // Get current state from background
+    // Ver estado actual
     const state = await sendMsg({ type: 'get-state' });
 
     if (state && state.connected) {
-      selectedRoom.id = state.roomId || stored.roomId || '';
-      selectedRoom.name = state.roomName || stored.roomName || '';
+      selectedRoom.id = state.roomId || '';
+      selectedRoom.name = state.roomName || '';
       showConnectedView(state);
       showStep('connected');
-    } else if (stored.serverUrl && stored.phone) {
+    } else if (stored.phone) {
+      // Ya tiene telefono guardado, ir directo a salas
+      const serverUrl = stored.serverUrl || DEFAULT_SERVER;
+      await chrome.storage.local.set({ serverUrl });
+      await sendMsg({ type: 'set-config', data: { serverUrl, phone: stored.phone } });
       showStep('rooms');
       fetchRooms();
     } else {
-      showStep('config');
+      showStep('phone');
     }
   }
 
-  // --- Step 1: Config ---
+  // --- Step 1: Telefono ---
 
   els.btnContinue.addEventListener('click', async () => {
-    const serverUrl = els.inputServer.value.trim().replace(/\/+$/, '');
     const phone = els.inputPhone.value.trim();
+    const serverUrl = (els.inputServer.value.trim().replace(/\/+$/, '')) || DEFAULT_SERVER;
 
-    if (!serverUrl) {
-      els.inputServer.focus();
-      return;
-    }
-    if (!phone) {
-      els.inputPhone.focus();
-      return;
-    }
+    if (!phone) { els.inputPhone.focus(); return; }
 
     els.btnContinue.disabled = true;
-
     await chrome.storage.local.set({ serverUrl, phone });
     await sendMsg({ type: 'set-config', data: { serverUrl, phone } });
-
     els.btnContinue.disabled = false;
+
     showStep('rooms');
     fetchRooms();
   });
 
-  // --- Step 2: Rooms ---
+  // --- Step 2: Salas ---
 
-  els.btnBackRooms.addEventListener('click', () => {
-    showStep('config');
-  });
+  els.btnBackRooms.addEventListener('click', () => showStep('phone'));
 
   async function fetchRooms() {
     els.roomsLoading.classList.remove('hidden');
@@ -128,18 +124,16 @@
     hideError(els.roomsError);
 
     const response = await sendMsg({ type: 'get-rooms' });
-
     els.roomsLoading.classList.add('hidden');
 
     if (!response || response.error) {
       showError(els.roomsError, response?.error || 'No se pudo conectar al servidor');
       return;
     }
-
     if (response.rooms && response.rooms.length > 0) {
       renderRooms(response.rooms);
     } else {
-      showError(els.roomsError, 'No hay salas disponibles');
+      showError(els.roomsError, 'No hay salas disponibles. El admin debe crear una.');
     }
   }
 
@@ -152,7 +146,7 @@
       card.addEventListener('click', () => {
         selectedRoom.id = room.id;
         selectedRoom.name = room.name || room.id;
-        els.passwordTitle.textContent = 'Contrasena de ' + selectedRoom.name;
+        els.passwordTitle.textContent = selectedRoom.name;
         els.inputPassword.value = '';
         hideError(els.passwordError);
         showStep('password');
@@ -161,19 +155,13 @@
     });
   }
 
-  // --- Step 3: Password ---
+  // --- Step 3: Contrasena ---
 
-  els.btnBackPassword.addEventListener('click', () => {
-    showStep('rooms');
-  });
+  els.btnBackPassword.addEventListener('click', () => showStep('rooms'));
 
   els.btnJoin.addEventListener('click', async () => {
     const password = els.inputPassword.value;
-
-    if (!password) {
-      els.inputPassword.focus();
-      return;
-    }
+    if (!password) { els.inputPassword.focus(); return; }
 
     els.btnJoin.disabled = true;
     hideError(els.passwordError);
@@ -186,27 +174,20 @@
     els.btnJoin.disabled = false;
 
     if (response && response.success) {
-      await chrome.storage.local.set({
-        roomId: selectedRoom.id,
-        roomName: selectedRoom.name,
-      });
+      await chrome.storage.local.set({ roomId: selectedRoom.id, roomName: selectedRoom.name });
       showConnectedView(response);
       showStep('connected');
     } else {
-      showError(els.passwordError, response?.error || 'No se pudo unir a la sala');
+      showError(els.passwordError, response?.error || 'Contrasena incorrecta');
     }
   });
 
-  // --- Step 4: Connected ---
+  // --- Step 4: Conectado ---
 
   function showConnectedView(state) {
     els.connectedRoomName.textContent = selectedRoom.name || state?.roomName || 'Sala';
     updateWaStatus(state?.waLoggedIn || false);
-    if (state?.lastAction) {
-      els.lastAction.textContent = state.lastAction;
-    } else {
-      els.lastAction.textContent = '';
-    }
+    els.lastAction.textContent = state?.lastAction || '';
   }
 
   function updateWaStatus(loggedIn) {
@@ -221,9 +202,7 @@
     }
   }
 
-  els.btnOpenWa.addEventListener('click', async () => {
-    await sendMsg({ type: 'open-wa' });
-  });
+  els.btnOpenWa.addEventListener('click', () => sendMsg({ type: 'open-wa' }));
 
   els.btnLeave.addEventListener('click', async () => {
     els.btnLeave.disabled = true;
@@ -235,47 +214,36 @@
     fetchRooms();
   });
 
-  // --- Listen for background state updates ---
+  // --- Escuchar updates del background ---
 
-  chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
+  chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'state-update') {
       const data = msg.data || {};
-
       if (data.connected) {
         if (data.roomName) {
           selectedRoom.name = data.roomName;
           els.connectedRoomName.textContent = data.roomName;
         }
         updateWaStatus(data.waLoggedIn || false);
-        if (data.lastAction) {
-          els.lastAction.textContent = data.lastAction;
-        }
-
-        // If we're not already on connected step, switch to it
+        if (data.lastAction) els.lastAction.textContent = data.lastAction;
         if (!steps.connected.classList.contains('active')) {
           showConnectedView(data);
           showStep('connected');
         }
       } else {
-        // Disconnected - go back to rooms
         if (steps.connected.classList.contains('active')) {
           showStep('rooms');
           fetchRooms();
         }
       }
     }
-
     if (msg.type === 'rooms-update') {
       const data = msg.data || {};
       els.roomsLoading.classList.add('hidden');
-      if (data.error) {
-        showError(els.roomsError, data.error);
-      } else if (data.rooms) {
-        renderRooms(data.rooms);
-      }
+      if (data.error) { showError(els.roomsError, data.error); }
+      else if (data.rooms) { renderRooms(data.rooms); }
     }
   });
 
-  // --- Start ---
   init();
 })();

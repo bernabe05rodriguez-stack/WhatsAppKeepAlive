@@ -2,9 +2,12 @@
 
 'use strict';
 
+// URL por defecto del servidor
+const DEFAULT_SERVER = 'https://redhawk-whatsapp-keepalive.bm6z1s.easypanel.host';
+
 // --- State ---
 let state = {
-  serverUrl: '',
+  serverUrl: DEFAULT_SERVER,
   phone: '',
   roomId: '',
   roomName: '',
@@ -163,6 +166,8 @@ function handleServerMessage(msg) {
         state.lastAction = 'Conectado a ' + state.roomName;
         saveState();
         openWATab();
+        // Activar overlay en la pestaña de WhatsApp
+        activateContentScript();
         if (pendingJoinCallback) {
           pendingJoinCallback({ success: true, roomName: state.roomName });
           pendingJoinCallback = null;
@@ -254,6 +259,20 @@ function getStateForPopup() {
     waLoggedIn: state.waLoggedIn,
     lastAction: state.lastAction,
   };
+}
+
+// --- Content Script Control ---
+
+function activateContentScript() {
+  if (state.waTabId) {
+    chrome.tabs.sendMessage(state.waTabId, { type: 'activate' }).catch(() => {});
+  }
+}
+
+function deactivateContentScript() {
+  if (state.waTabId) {
+    chrome.tabs.sendMessage(state.waTabId, { type: 'deactivate' }).catch(() => {});
+  }
 }
 
 // --- WhatsApp Tab Management ---
@@ -400,7 +419,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.pendingMessage = null;
       saveState();
 
-      // Close WA tab
+      // Deactivate overlay and close WA tab
+      deactivateContentScript();
       if (state.waTabId) {
         chrome.tabs.remove(state.waTabId).catch(() => {});
         state.waTabId = null;
