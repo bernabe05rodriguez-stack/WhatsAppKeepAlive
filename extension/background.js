@@ -285,7 +285,7 @@ function openWATab(url) {
     chrome.tabs.get(state.waTabId, (tab) => {
       if (chrome.runtime.lastError || !tab) {
         state.waTabId = null;
-        createWATab(url);
+        findOrCreateWATab(url);
       } else {
         // Tab exists, update its URL if needed
         if (url !== 'https://web.whatsapp.com') {
@@ -294,8 +294,26 @@ function openWATab(url) {
       }
     });
   } else {
-    createWATab(url);
+    findOrCreateWATab(url);
   }
+}
+
+function findOrCreateWATab(url) {
+  // Search for an existing WhatsApp Web tab before creating a new one
+  chrome.tabs.query({ url: 'https://web.whatsapp.com/*' }, (tabs) => {
+    if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
+      createWATab(url);
+    } else {
+      // Use the first existing WA tab
+      state.waTabId = tabs[0].id;
+      log('Found existing WA tab:', state.waTabId);
+      if (url !== 'https://web.whatsapp.com') {
+        chrome.tabs.update(state.waTabId, { url });
+      }
+      // Activate overlay on the existing tab
+      activateContentScript();
+    }
+  });
 }
 
 function createWATab(url) {
@@ -419,12 +437,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.pendingMessage = null;
       saveState();
 
-      // Deactivate overlay and close WA tab
+      // Deactivate overlay but keep the WA tab open
       deactivateContentScript();
-      if (state.waTabId) {
-        chrome.tabs.remove(state.waTabId).catch(() => {});
-        state.waTabId = null;
-      }
+      state.waTabId = null;
       state.waLoggedIn = false;
 
       sendResponse({ ok: true });
@@ -439,6 +454,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // --- From content script ---
     case 'get-pending': {
+      // Capture tab ID from content script
+      if (sender.tab && sender.tab.id && !state.waTabId) {
+        state.waTabId = sender.tab.id;
+        log('Captured WA tab ID:', state.waTabId);
+      }
       const pending = state.pendingMessage;
       state.pendingMessage = null;
       sendResponse(pending || {});
@@ -458,6 +478,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     case 'wa-status': {
+      // Capture tab ID from existing WA tab
+      if (sender.tab && sender.tab.id) {
+        if (!state.waTabId) {
+          state.waTabId = sender.tab.id;
+          log('Captured WA tab ID from content script:', state.waTabId);
+        }
+      }
       const status = msg.status;
       state.waLoggedIn = (status === 'ready');
       log('WA status:', status, '-> waLoggedIn:', state.waLoggedIn);
