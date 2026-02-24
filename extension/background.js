@@ -18,6 +18,7 @@ let state = {
   ws: null,
   lastAction: '',
   userCount: 0,
+  currentChatPhone: null, // telefono del chat actualmente abierto en WA
 };
 
 // Track pending room requests so we can respond to popup
@@ -140,6 +141,19 @@ function ensureWS() {
   }
 }
 
+// --- Send URL helper ---
+
+function navigateToSendUrl(phone, message) {
+  const sendUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(message);
+  state.currentChatPhone = phone;
+  chrome.tabs.update(state.waTabId, { url: sendUrl }).catch(() => {
+    log('Failed to navigate WA tab');
+    state.waTabId = null;
+    state.currentChatPhone = null;
+    wsSend({ type: 'message-sent', data: { success: false } });
+  });
+}
+
 // --- Handle messages from server ---
 
 function handleServerMessage(msg) {
@@ -190,21 +204,30 @@ function handleServerMessage(msg) {
       state.lastAction = 'Enviando mensaje a +' + data.targetPhone + '...';
       notifyPopup({ type: 'state-update', data: getStateForPopup() });
 
-      // Inyectar URL con telefono + mensaje: WhatsApp abre el chat y precarga el texto
-      if (state.waTabId) {
-        const phone = data.targetPhone.replace(/[^0-9]/g, '');
-        const sendUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(data.message);
-        log('Navigating WA tab to send URL');
-        chrome.tabs.update(state.waTabId, { url: sendUrl }).catch(() => {
-          log('Failed to navigate WA tab');
-          state.waTabId = null;
-          wsSend({ type: 'message-sent', data: { success: false } });
-        });
-        // Content script detecta la URL /send y clickea enviar automaticamente
-        // El resultado llega via message-result
-      } else {
+      if (!state.waTabId) {
         log('No WA tab, cannot send message');
         wsSend({ type: 'message-sent', data: { success: false } });
+        break;
+      }
+
+      const phone = data.targetPhone.replace(/[^0-9]/g, '');
+
+      if (state.currentChatPhone === phone) {
+        // Mismo chat ya abierto → escribir directo sin recargar
+        log('Mismo chat abierto, enviando directo (type-and-send)');
+        chrome.tabs.sendMessage(state.waTabId, {
+          type: 'type-and-send',
+          data: { message: data.message },
+        }).catch(() => {
+          // Content script no responde, caer a URL
+          log('Content script no responde, cayendo a URL');
+          state.currentChatPhone = null;
+          navigateToSendUrl(phone, data.message);
+        });
+      } else {
+        // Chat diferente → navegar a URL (una sola recarga)
+        log('Nuevo destino, navegando via URL');
+        navigateToSendUrl(phone, data.message);
       }
       break;
     }
@@ -326,6 +349,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     log('WA tab was closed');
     state.waTabId = null;
     state.waLoggedIn = false;
+    state.currentChatPhone = null;
     notifyPopup({ type: 'state-update', data: getStateForPopup() });
   }
 });
@@ -434,6 +458,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.roomName = '';
       state.roomPassword = '';
       state.lastAction = '';
+      state.currentChatPhone = null;
       saveState();
 
       state.waTabId = null;
