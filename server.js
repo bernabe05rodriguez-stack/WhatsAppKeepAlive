@@ -73,6 +73,10 @@ const activityLog = [];
 /** Map<roomId, intervalId> - running pairing engines */
 const roomEngines = new Map();
 
+/** Active conversation pairs for live monitoring */
+const activePairs = new Map();
+let nextPairId = 0;
+
 // =============================================================================
 // DEFAULT CONVERSATIONS (Argentine Spanish)
 // =============================================================================
@@ -271,9 +275,11 @@ function saveConversations() {
 // =============================================================================
 
 function logActivity(roomId, type, message) {
+  const room = rooms.get(roomId);
   const entry = {
     timestamp: new Date().toISOString(),
     roomId,
+    roomName: room ? room.name : roomId,
     type,
     message
   };
@@ -299,12 +305,28 @@ function getRoomStatuses() {
         activeUsers.push({ phone, available: user.available });
       }
     }
+    const pairs = [];
+    for (const [, pair] of activePairs) {
+      if (pair.roomId === id) {
+        pairs.push({
+          id: pair.id,
+          phoneA: pair.phoneA,
+          phoneB: pair.phoneB,
+          totalTurns: pair.totalTurns,
+          currentTurn: pair.currentTurn,
+          currentSender: pair.currentSender,
+          currentMessage: pair.currentMessage,
+          startedAt: pair.startedAt,
+        });
+      }
+    }
     statuses.push({
       id,
       name: room.name,
       activeCount: activeUsers.length,
       busyCount: activeUsers.filter(u => !u.available).length,
-      activeUsers
+      activeUsers,
+      activePairs: pairs,
     });
   }
   return statuses;
@@ -398,18 +420,35 @@ async function runConversation(roomId, userA, userB, conv) {
   const room = rooms.get(roomId);
   if (!room) return;
 
+  // Register active pair for live monitoring
+  const pairId = 'p' + (++nextPairId);
+  activePairs.set(pairId, {
+    id: pairId,
+    roomId,
+    phoneA: userA.phone,
+    phoneB: userB.phone,
+    totalTurns: conv.turns.length,
+    currentTurn: 0,
+    currentSender: '',
+    currentMessage: '',
+    startedAt: new Date().toISOString(),
+  });
+  broadcastStatus();
+
   const minMs = (room.minInterval || 5) * 1000;
   const maxMs = (room.maxInterval || 15) * 1000;
 
   try {
-    for (const turn of conv.turns) {
+    for (let i = 0; i < conv.turns.length; i++) {
+      const turn = conv.turns[i];
+
       // Wait random delay between min and max interval
       const delay = randomBetween(minMs, maxMs);
       await sleep(delay);
 
       // Check both users still connected
       if (!extUsers.has(userA.phone) || !extUsers.has(userB.phone)) {
-        logActivity(roomId, 'disconnect', `Conversation interrupted: user disconnected`);
+        logActivity(roomId, 'disconnect', `Conversacion interrumpida: usuario desconectado`);
         break;
       }
 
@@ -417,17 +456,33 @@ async function runConversation(roomId, userA, userB, conv) {
       const sender = turn.role === 'A' ? userA : userB;
       const receiver = turn.role === 'A' ? userB : userA;
 
+      // Update pair tracking
+      const pair = activePairs.get(pairId);
+      if (pair) {
+        pair.currentTurn = i + 1;
+        pair.currentSender = sender.phone;
+        pair.currentMessage = turn.message;
+      }
+      broadcastStatus();
+
       // Send message and wait for confirmation
       const success = await sendMessageAndWait(sender, receiver.phone, turn.message);
       if (!success) {
-        logActivity(roomId, 'error', `Message send failed from ${sender.phone} to ${receiver.phone}`);
+        logActivity(roomId, 'error', `Fallo envio: ${sender.phone} -> ${receiver.phone}`);
         break;
       }
+
+      // Log each successful message
+      const preview = turn.message.length > 50 ? turn.message.substring(0, 50) + '...' : turn.message;
+      logActivity(roomId, 'message', `${sender.phone} -> ${receiver.phone}: "${preview}"`);
     }
   } catch (err) {
     console.error('[ENGINE] Error in conversation:', err.message);
-    logActivity(roomId, 'error', `Conversation error: ${err.message}`);
+    logActivity(roomId, 'error', `Error: ${err.message}`);
   }
+
+  // Remove pair tracking
+  activePairs.delete(pairId);
 
   // Mark both users as available again (if still connected)
   if (extUsers.has(userA.phone)) {
@@ -437,7 +492,7 @@ async function runConversation(roomId, userA, userB, conv) {
     userB.available = true;
   }
 
-  logActivity(roomId, 'done', `Conversation between ${userA.phone} and ${userB.phone} finished`);
+  logActivity(roomId, 'done', `Conversacion finalizada: ${userA.phone} <-> ${userB.phone}`);
   broadcastStatus();
 }
 

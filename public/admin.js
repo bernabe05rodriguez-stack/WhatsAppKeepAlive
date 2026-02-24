@@ -15,6 +15,7 @@
   let wsReconnectTimer = null;
   let currentTab = 'rooms';
   let pendingDeleteCallback = null;
+  let currentDetailRoomId = null;
 
   // Cache de datos
   let roomsData = [];
@@ -74,6 +75,14 @@
   const activityLog = $('#activity-log');
   const activityEmpty = $('#activity-empty');
   const clearActivityBtn = $('#clear-activity-btn');
+
+  // Room detail modal
+  const roomDetailModal = $('#room-detail-modal');
+  const roomDetailTitle = $('#room-detail-title');
+  const roomDetailMeta = $('#room-detail-meta');
+  const roomDetailPairs = $('#room-detail-pairs');
+  const roomDetailUsers = $('#room-detail-users');
+  const roomDetailActivity = $('#room-detail-activity');
 
   // Confirm modal
   const confirmModal = $('#confirm-modal');
@@ -275,12 +284,17 @@
              <p class="room-no-phones">Sin números conectados</p>
            </div>`;
 
-      return `<div class="room-card" data-room-id="${room.id}">
+      const pairsCount = (room.activePairs || []).length;
+      const pairsInfo = pairsCount > 0
+        ? `<span class="room-pairs-count">${pairsCount} ${pairsCount === 1 ? 'conversacion' : 'conversaciones'}</span>`
+        : '';
+
+      return `<div class="room-card clickable" data-room-id="${room.id}" onclick="Admin.openRoomDetail('${room.id}')">
         <div class="room-card-header">
           <span class="room-card-name">${escapeHtml(room.name)}</span>
           <div class="room-card-actions">
-            <button class="btn btn-outline btn-icon" onclick="Admin.editRoom('${room.id}')" title="Editar">&#9998;</button>
-            <button class="btn btn-danger btn-icon" onclick="Admin.deleteRoom('${room.id}')" title="Eliminar">&#128465;</button>
+            <button class="btn btn-outline btn-icon" onclick="event.stopPropagation(); Admin.editRoom('${room.id}')" title="Editar">&#9998;</button>
+            <button class="btn btn-danger btn-icon" onclick="event.stopPropagation(); Admin.deleteRoom('${room.id}')" title="Eliminar">&#128465;</button>
           </div>
         </div>
         <div class="room-card-meta">
@@ -289,6 +303,7 @@
             <span class="dot"></span>
             ${userCount} ${userCount === 1 ? 'usuario' : 'usuarios'}
           </span>
+          ${pairsInfo}
         </div>
         ${phonesSection}
       </div>`;
@@ -660,6 +675,11 @@
       activityData = activityData.slice(0, 500);
     }
 
+    // Si el modal de detalle esta abierto y es la misma sala, actualizar
+    if (currentDetailRoomId && !roomDetailModal.hidden && entry.roomId === currentDetailRoomId) {
+      updateRoomDetail();
+    }
+
     // Si estamos en la pestaña de actividad, actualizar el DOM directamente
     if (currentTab === 'activity') {
       activityEmpty.hidden = true;
@@ -824,6 +844,11 @@
     if (currentTab === 'rooms') {
       renderRooms();
     }
+
+    // Si el modal de detalle esta abierto, actualizar
+    if (currentDetailRoomId && !roomDetailModal.hidden) {
+      updateRoomDetail();
+    }
   }
 
   function applyStatusToRooms() {
@@ -838,8 +863,103 @@
           phone: u.phone,
           status: u.available ? 'available' : 'busy',
         }));
+        room.activePairs = live.activePairs || [];
       }
     });
+  }
+
+  // ===================== ROOM DETAIL =====================
+
+  /**
+   * Abre el modal de detalle de una sala.
+   */
+  function openRoomDetail(roomId) {
+    currentDetailRoomId = roomId;
+    updateRoomDetail();
+    openModal(roomDetailModal);
+  }
+
+  /**
+   * Actualiza el contenido del modal de detalle.
+   */
+  function updateRoomDetail() {
+    if (!currentDetailRoomId) return;
+
+    const room = roomsData.find((r) => r.id === currentDetailRoomId);
+    if (!room) return;
+
+    // Title
+    roomDetailTitle.textContent = room.name || 'Sala';
+
+    // Meta info
+    const users = room.users || [];
+    const pairs = room.activePairs || [];
+    const userCount = users.length;
+    const emptyClass = userCount === 0 ? 'empty' : '';
+    roomDetailMeta.innerHTML = `
+      <span class="room-interval">${room.minInterval || 20}-${room.maxInterval || 30} seg</span>
+      <span class="room-user-count ${emptyClass}">
+        <span class="dot"></span>
+        ${userCount} ${userCount === 1 ? 'usuario' : 'usuarios'}
+      </span>
+    `;
+
+    // Active pairs
+    if (pairs.length === 0) {
+      roomDetailPairs.innerHTML = '<div class="detail-empty">Sin conversaciones activas</div>';
+    } else {
+      roomDetailPairs.innerHTML = pairs.map((pair) => {
+        const pct = pair.totalTurns > 0 ? Math.round((pair.currentTurn / pair.totalTurns) * 100) : 0;
+        const senderLabel = pair.currentSender
+          ? `<span class="pair-sender">${escapeHtml(pair.currentSender)} dice:</span>`
+          : '';
+        const msgHtml = pair.currentMessage
+          ? `<div class="pair-message">${senderLabel} ${escapeHtml(pair.currentMessage)}</div>`
+          : '';
+        return `<div class="pair-card">
+          <div class="pair-phones">
+            <span>${escapeHtml(pair.phoneA)}</span>
+            <span class="pair-arrow">&harr;</span>
+            <span>${escapeHtml(pair.phoneB)}</span>
+          </div>
+          <div class="pair-progress">
+            <span>Turno ${pair.currentTurn}/${pair.totalTurns}</span>
+            <div class="pair-progress-bar"><div class="pair-progress-fill" style="width:${pct}%"></div></div>
+          </div>
+          ${msgHtml}
+        </div>`;
+      }).join('');
+    }
+
+    // Users
+    if (users.length === 0) {
+      roomDetailUsers.innerHTML = '<div class="detail-empty">Sin usuarios conectados</div>';
+    } else {
+      roomDetailUsers.innerHTML = users.map((u) => {
+        const statusClass = u.status || 'available';
+        const statusLabel = statusClass === 'busy' ? 'Ocupado' : 'Disponible';
+        return `<div class="detail-user-item">
+          <span class="phone-status ${statusClass}"></span>
+          <span class="detail-user-phone">${escapeHtml(u.phone)}</span>
+          <span class="detail-user-badge ${statusClass}">${statusLabel}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Activity (filtered by room)
+    const roomActivity = activityData.filter((e) => e.roomId === currentDetailRoomId).slice(0, 50);
+    if (roomActivity.length === 0) {
+      roomDetailActivity.innerHTML = '<div class="detail-empty">Sin actividad</div>';
+    } else {
+      roomDetailActivity.innerHTML = roomActivity.map((entry) => {
+        const ts = formatTimestamp(entry.timestamp);
+        const msg = escapeHtml(entry.message || entry.type || '');
+        return `<div class="activity-entry">
+          <span class="activity-timestamp">${ts}</span>
+          <span class="activity-message">${msg}</span>
+        </div>`;
+      }).join('');
+    }
   }
 
   // ===================== MODAL HELPERS =====================
@@ -861,6 +981,9 @@
    */
   function closeModal(modalEl) {
     modalEl.hidden = true;
+    if (modalEl === roomDetailModal) {
+      currentDetailRoomId = null;
+    }
   }
 
   // ===================== UTILITIES =====================
@@ -965,6 +1088,7 @@
     editConversation,
     deleteConversation,
     toggleConversation,
+    openRoomDetail,
   };
 
   // ===================== INIT =====================

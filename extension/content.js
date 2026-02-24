@@ -58,6 +58,9 @@
   // --- Buscar contacto por numero (sin recargar pagina) ---
 
   async function openChatBySearch(phoneNumber) {
+    // Asegurar formato con + para WhatsApp Web
+    const searchPhone = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber;
+
     // Buscar el search box en el sidebar
     let searchBox = document.querySelector('[data-tab="3"]');
     if (!searchBox) {
@@ -74,42 +77,51 @@
     document.execCommand('selectAll', false, null);
     document.execCommand('delete', false, null);
     await sleep(100);
-    document.execCommand('insertText', false, phoneNumber);
-    await sleep(2000); // Esperar resultados de busqueda
+    document.execCommand('insertText', false, searchPhone);
+    await sleep(3000); // Esperar resultados de busqueda
 
-    // Buscar resultado clickeable
-    // WhatsApp Web muestra resultados en elementos con role="listitem" o similar
+    // Buscar resultado clickeable (multiples selectores para distintas versiones de WA Web)
     const resultSelectors = [
       '[data-testid="cell-frame-container"]',
       '#side .matched-text',
       '#side [role="listitem"]',
       '#side [data-testid="chat-list"] [role="row"]',
+      '#side [role="option"]',
+      '#side ._ajv6',
     ];
 
     for (const sel of resultSelectors) {
-      const result = document.querySelector(sel);
-      if (result) {
-        const clickTarget = result.closest('[role="listitem"]') || result.closest('[role="row"]') || result;
+      const results = document.querySelectorAll(sel);
+      for (const result of results) {
+        const clickTarget = result.closest('[role="listitem"]') || result.closest('[role="row"]') || result.closest('[role="option"]') || result;
         clickTarget.click();
-        await sleep(1000);
-
-        // Limpiar busqueda
-        searchBox.focus();
-        await sleep(100);
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-        // Presionar Escape para cerrar panel de busqueda
-        searchBox.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true,
-        }));
+        await sleep(1500);
 
         // Verificar que se abrio un chat (hay input de mensaje)
         const msgInput = await waitForMessageInput(5000);
-        if (msgInput) return true;
+        if (msgInput) {
+          // Limpiar busqueda
+          searchBox.focus();
+          await sleep(100);
+          document.execCommand('selectAll', false, null);
+          document.execCommand('delete', false, null);
+          searchBox.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true,
+          }));
+          return true;
+        }
       }
     }
 
-    log('No se encontro resultado de busqueda para:', phoneNumber);
+    // Fallback: si la busqueda no funciono, intentar via URL (recarga la pagina)
+    log('Busqueda fallo, intentando via URL...');
+    const urlPhone = phoneNumber.replace(/[^0-9]/g, '');
+    window.location.href = 'https://web.whatsapp.com/send?phone=' + urlPhone;
+    await sleep(5000);
+    const input = await waitForMessageInput(20000);
+    if (input) return true;
+
+    log('No se encontro resultado para:', phoneNumber);
     return false;
   }
 

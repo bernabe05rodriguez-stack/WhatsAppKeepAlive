@@ -175,6 +175,34 @@
     </div>
   </div>
 
+  <!-- ==================== MODAL: DETALLE DE SALA ==================== -->
+  <div id="room-detail-modal" class="modal-overlay" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="room-detail-title">Sala</h3>
+        <button class="modal-close" data-close="room-detail-modal">&times;</button>
+      </div>
+      <div class="room-detail-body">
+        <div class="room-detail-meta" id="room-detail-meta"></div>
+
+        <div class="room-detail-section">
+          <h4 class="room-detail-section-title">Conversaciones activas</h4>
+          <div id="room-detail-pairs"></div>
+        </div>
+
+        <div class="room-detail-section">
+          <h4 class="room-detail-section-title">Usuarios conectados</h4>
+          <div id="room-detail-users"></div>
+        </div>
+
+        <div class="room-detail-section">
+          <h4 class="room-detail-section-title">Actividad reciente</h4>
+          <div id="room-detail-activity" class="room-detail-activity-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="admin.js"></script>
 </body>
 </html>
