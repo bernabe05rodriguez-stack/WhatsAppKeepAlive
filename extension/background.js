@@ -25,6 +25,10 @@ let state = {
 let pendingRoomsCallback = null;
 let pendingJoinCallback = null;
 
+// Message queue to avoid concurrent sends
+let messageQueue = [];
+let isSendingMessage = false;
+
 // --- Logging ---
 function log(...args) {
   console.log('[WKA-BG]', ...args);
@@ -154,6 +158,48 @@ function navigateToSendUrl(phone, message) {
   });
 }
 
+// --- Message Queue ---
+
+function processMessageQueue() {
+  if (isSendingMessage || messageQueue.length === 0) return;
+
+  isSendingMessage = true;
+  const data = messageQueue.shift();
+
+  state.lastAction = 'Enviando mensaje a +' + data.targetPhone + '...';
+  notifyPopup({ type: 'state-update', data: getStateForPopup() });
+
+  if (!state.waTabId) {
+    log('No WA tab, cannot send message');
+    wsSend({ type: 'message-sent', data: { success: false } });
+    isSendingMessage = false;
+    processMessageQueue(); // process next
+    return;
+  }
+
+  const phone = data.targetPhone.replace(/[^0-9]/g, '');
+
+  if (state.currentChatPhone === phone) {
+    // Mismo chat ya abierto → escribir directo sin recargar
+    log('Mismo chat abierto, enviando directo (type-and-send)');
+    chrome.tabs.sendMessage(state.waTabId, {
+      type: 'type-and-send',
+      data: { message: data.message },
+    }).catch(() => {
+      // Content script no responde, caer a URL
+      log('Content script no responde, cayendo a URL');
+      state.currentChatPhone = null;
+      navigateToSendUrl(phone, data.message);
+    });
+    // isSendingMessage will be reset by message-result handler
+  } else {
+    // Chat diferente → navegar a URL (una sola recarga)
+    log('Nuevo destino, navegando via URL');
+    navigateToSendUrl(phone, data.message);
+    // isSendingMessage will be reset by message-result handler
+  }
+}
+
 // --- Handle messages from server ---
 
 function handleServerMessage(msg) {
@@ -200,35 +246,11 @@ function handleServerMessage(msg) {
 
     case 'send-message': {
       const data = msg.data || {};
-      log('Send message request:', data.targetPhone);
-      state.lastAction = 'Enviando mensaje a +' + data.targetPhone + '...';
-      notifyPopup({ type: 'state-update', data: getStateForPopup() });
+      log('Send message request queued:', data.targetPhone);
 
-      if (!state.waTabId) {
-        log('No WA tab, cannot send message');
-        wsSend({ type: 'message-sent', data: { success: false } });
-        break;
-      }
-
-      const phone = data.targetPhone.replace(/[^0-9]/g, '');
-
-      if (state.currentChatPhone === phone) {
-        // Mismo chat ya abierto → escribir directo sin recargar
-        log('Mismo chat abierto, enviando directo (type-and-send)');
-        chrome.tabs.sendMessage(state.waTabId, {
-          type: 'type-and-send',
-          data: { message: data.message },
-        }).catch(() => {
-          // Content script no responde, caer a URL
-          log('Content script no responde, cayendo a URL');
-          state.currentChatPhone = null;
-          navigateToSendUrl(phone, data.message);
-        });
-      } else {
-        // Chat diferente → navegar a URL (una sola recarga)
-        log('Nuevo destino, navegando via URL');
-        navigateToSendUrl(phone, data.message);
-      }
+      // Enqueue and process
+      messageQueue.push(data);
+      processMessageQueue();
       break;
     }
 
@@ -459,6 +481,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.roomPassword = '';
       state.lastAction = '';
       state.currentChatPhone = null;
+      // Clear message queue
+      messageQueue = [];
+      isSendingMessage = false;
       saveState();
 
       state.waTabId = null;
@@ -483,6 +508,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         : 'Error al enviar mensaje';
       wsSend({ type: 'message-sent', data: { success } });
       notifyPopup({ type: 'state-update', data: getStateForPopup() });
+      // Unlock queue and process next message
+      isSendingMessage = false;
+      processMessageQueue();
       sendResponse({ ok: true });
       return false;
     }
@@ -518,10 +546,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepalive') {
     log('Keepalive alarm fired');
 
-    // If we should be connected but WS is dead, reconnect
+    // If we should be connected but WS is dead, reconnect with jitter
     if (state.connected && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
-      log('WS not connected, reconnecting...');
-      connectWS();
+      const jitter = Math.floor(Math.random() * 5000); // 0-5s random delay
+      log('WS not connected, reconnecting in', jitter, 'ms (jitter)...');
+      setTimeout(() => connectWS(), jitter);
     }
 
     // Send ping if connected

@@ -22,6 +22,7 @@ const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
 const DATA_DIR = path.join(__dirname, 'data');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
 const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
+const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -76,6 +77,15 @@ const roomEngines = new Map();
 /** Active conversation pairs for live monitoring */
 const activePairs = new Map();
 let nextPairId = 0;
+
+/** Cooldown set - phones that recently finished a conversation (5s cooldown) */
+const cooldownPhones = new Set();
+const COOLDOWN_MS = 5000;
+
+/** Login rate limiting - Map<ip, { attempts, blockedUntil }> */
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_BLOCK_MS = 5 * 60 * 1000; // 5 minutes
 
 // =============================================================================
 // DEFAULT CONVERSATIONS (Argentine Spanish)
@@ -249,6 +259,17 @@ function loadData() {
     saveConversations();
     console.log('[DATA] Initialized with default conversations');
   }
+
+  // Load activity log
+  if (fs.existsSync(ACTIVITY_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(ACTIVITY_FILE, 'utf-8'));
+      activityLog.push(...data);
+      console.log(`[DATA] Loaded ${activityLog.length} activity entries`);
+    } catch (err) {
+      console.error('[DATA] Error loading activity:', err.message);
+    }
+  }
 }
 
 function saveRooms() {
@@ -270,6 +291,21 @@ function saveConversations() {
   }
 }
 
+/** Debounced activity save - avoids writing too frequently */
+let activitySaveTimer = null;
+function saveActivityDebounced() {
+  if (activitySaveTimer) return;
+  activitySaveTimer = setTimeout(() => {
+    activitySaveTimer = null;
+    ensureDataDir();
+    try {
+      fs.writeFileSync(ACTIVITY_FILE, JSON.stringify(activityLog, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[DATA] Error saving activity:', err.message);
+    }
+  }, 5000); // save at most every 5 seconds
+}
+
 // =============================================================================
 // ACTIVITY LOG
 // =============================================================================
@@ -287,6 +323,8 @@ function logActivity(roomId, type, message) {
   if (activityLog.length > 200) {
     activityLog.length = 200;
   }
+  // Persist to disk (debounced)
+  saveActivityDebounced();
   // Broadcast to admin clients
   broadcastToAdmins({ type: 'activity', data: entry });
   console.log(`[ACTIVITY] [${type}] Room ${roomId}: ${message}`);
@@ -378,10 +416,10 @@ function checkAndPair(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
 
-  // Get all available users in this room
+  // Get all available users in this room (exclude cooldown)
   const available = [];
   for (const [phone, user] of extUsers) {
-    if (user.roomId === roomId && user.available === true) {
+    if (user.roomId === roomId && user.available === true && !cooldownPhones.has(phone)) {
       available.push(user);
     }
   }
@@ -465,10 +503,10 @@ async function runConversation(roomId, userA, userB, conv) {
       }
       broadcastStatus();
 
-      // Send message and wait for confirmation
-      const success = await sendMessageAndWait(sender, receiver.phone, turn.message);
+      // Send message with retry logic
+      const success = await sendMessageWithRetry(sender, receiver.phone, turn.message);
       if (!success) {
-        logActivity(roomId, 'error', `Fallo envio: ${sender.phone} -> ${receiver.phone}`);
+        logActivity(roomId, 'error', `Fallo envio (${MAX_RETRIES + 1} intentos): ${sender.phone} -> ${receiver.phone}`);
         break;
       }
 
@@ -484,6 +522,12 @@ async function runConversation(roomId, userA, userB, conv) {
   // Remove pair tracking
   activePairs.delete(pairId);
 
+  // Add cooldown before making users available again
+  cooldownPhones.add(userA.phone);
+  cooldownPhones.add(userB.phone);
+  setTimeout(() => cooldownPhones.delete(userA.phone), COOLDOWN_MS);
+  setTimeout(() => cooldownPhones.delete(userB.phone), COOLDOWN_MS);
+
   // Mark both users as available again (if still connected)
   if (extUsers.has(userA.phone)) {
     userA.available = true;
@@ -496,18 +540,20 @@ async function runConversation(roomId, userA, userB, conv) {
   broadcastStatus();
 }
 
+const MESSAGE_TIMEOUT_MS = 15000; // 15 seconds timeout per message
+const MAX_RETRIES = 2; // retry up to 2 times
+
 /**
  * Sends a message instruction to the extension and waits for confirmation.
  * Returns a Promise that resolves to true (success) or false (failure/timeout).
  */
 function sendMessageAndWait(user, targetPhone, message) {
   return new Promise(resolve => {
-    // Set up a 60-second timeout
     const timeout = setTimeout(() => {
       user.pendingResolve = null;
       console.warn(`[ENGINE] Message timeout for ${user.phone} -> ${targetPhone}`);
       resolve(false);
-    }, 60000);
+    }, MESSAGE_TIMEOUT_MS);
 
     // Store the resolve callback so message-sent handler can call it
     user.pendingResolve = (success) => {
@@ -535,6 +581,22 @@ function sendMessageAndWait(user, targetPhone, message) {
       resolve(false);
     }
   });
+}
+
+/**
+ * Sends a message with retry logic. Retries up to MAX_RETRIES times.
+ */
+async function sendMessageWithRetry(user, targetPhone, message) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (!extUsers.has(user.phone)) return false; // user disconnected
+    if (attempt > 0) {
+      console.log(`[ENGINE] Retry ${attempt}/${MAX_RETRIES} for ${user.phone} -> ${targetPhone}`);
+      await sleep(2000); // wait 2s before retry
+    }
+    const success = await sendMessageAndWait(user, targetPhone, message);
+    if (success) return true;
+  }
+  return false;
 }
 
 // =============================================================================
@@ -620,15 +682,35 @@ app.use(express.static(path.join(__dirname, 'public')));
 // REST API
 // =============================================================================
 
-// --- Login ---
+// --- Login (with rate limiting) ---
 app.post('/api/login', (req, res) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const record = loginAttempts.get(ip) || { attempts: 0, blockedUntil: 0 };
+
+  // Check if IP is blocked
+  if (record.blockedUntil > Date.now()) {
+    const remainSec = Math.ceil((record.blockedUntil - Date.now()) / 1000);
+    return res.status(429).json({ error: `Too many attempts. Try again in ${remainSec}s` });
+  }
+
   const { user, pass } = req.body || {};
   if (user === ADMIN_USER && pass === ADMIN_PASS) {
+    // Reset on successful login
+    loginAttempts.delete(ip);
     const token = crypto.randomBytes(32).toString('hex');
     adminTokens.add(token);
-    console.log(`[AUTH] Admin logged in`);
+    console.log(`[AUTH] Admin logged in from ${ip}`);
     return res.json({ token });
   }
+
+  // Failed attempt
+  record.attempts++;
+  if (record.attempts >= MAX_LOGIN_ATTEMPTS) {
+    record.blockedUntil = Date.now() + LOGIN_BLOCK_MS;
+    record.attempts = 0;
+    console.warn(`[AUTH] IP ${ip} blocked for ${LOGIN_BLOCK_MS / 1000}s after ${MAX_LOGIN_ATTEMPTS} failed attempts`);
+  }
+  loginAttempts.set(ip, record);
   return res.status(401).json({ error: 'Invalid credentials' });
 });
 
@@ -642,12 +724,17 @@ app.post('/api/rooms', authMiddleware, (req, res) => {
   if (!name) {
     return res.status(400).json({ error: 'name is required' });
   }
+  const min = minInterval || 5;
+  const max = maxInterval || 15;
+  if (min > max) {
+    return res.status(400).json({ error: 'minInterval cannot be greater than maxInterval' });
+  }
   const room = {
     id: genId(),
     name,
     password: password || '',
-    minInterval: minInterval || 5,
-    maxInterval: maxInterval || 15
+    minInterval: min,
+    maxInterval: max
   };
   rooms.set(room.id, room);
   saveRooms();
@@ -667,6 +754,10 @@ app.put('/api/rooms/:id', authMiddleware, (req, res) => {
   if (password !== undefined) room.password = password;
   if (minInterval !== undefined) room.minInterval = minInterval;
   if (maxInterval !== undefined) room.maxInterval = maxInterval;
+  // Validate intervals
+  if (room.minInterval > room.maxInterval) {
+    return res.status(400).json({ error: 'minInterval cannot be greater than maxInterval' });
+  }
   rooms.set(room.id, room);
   saveRooms();
   broadcastStatus();
@@ -699,6 +790,15 @@ app.post('/api/conversations', authMiddleware, (req, res) => {
   const { turns } = req.body || {};
   if (!turns || !Array.isArray(turns) || turns.length === 0) {
     return res.status(400).json({ error: 'turns array is required' });
+  }
+  // Validate message lengths (WhatsApp limit ~4096)
+  for (const turn of turns) {
+    if (!turn.message || !turn.role) {
+      return res.status(400).json({ error: 'Each turn must have role and message' });
+    }
+    if (turn.message.length > 4096) {
+      return res.status(400).json({ error: 'Message exceeds 4096 character limit' });
+    }
   }
   const conv = { id: genId(), turns };
   conversations.push(conv);
@@ -850,6 +950,16 @@ wssExt.on('connection', (ws) => {
             ws.send(JSON.stringify({
               type: 'joined',
               data: { success: false, error: 'phone and roomId are required' }
+            }));
+            break;
+          }
+
+          // Validate phone format (digits only, 7-15 chars - E.164 without +)
+          const cleanPhone = phone.replace(/[^0-9]/g, '');
+          if (cleanPhone.length < 7 || cleanPhone.length > 15) {
+            ws.send(JSON.stringify({
+              type: 'joined',
+              data: { success: false, error: 'Invalid phone number format (7-15 digits)' }
             }));
             break;
           }
@@ -1016,3 +1126,54 @@ server.listen(PORT, () => {
   console.log(`  WS Extension: ws://localhost:${PORT}/ws/ext`);
   console.log('='.repeat(60));
 });
+
+// =============================================================================
+// GRACEFUL SHUTDOWN
+// =============================================================================
+
+function gracefulShutdown(signal) {
+  console.log(`\n[SHUTDOWN] Received ${signal}, shutting down gracefully...`);
+
+  // Save activity log immediately
+  try {
+    ensureDataDir();
+    fs.writeFileSync(ACTIVITY_FILE, JSON.stringify(activityLog, null, 2), 'utf-8');
+    console.log('[SHUTDOWN] Activity log saved');
+  } catch (err) {
+    console.error('[SHUTDOWN] Error saving activity:', err.message);
+  }
+
+  // Stop all room engines
+  for (const [roomId] of roomEngines) {
+    stopRoomEngine(roomId);
+  }
+
+  // Close all extension WS connections
+  for (const [, user] of extUsers) {
+    try {
+      user.ws.close(1001, 'Server shutting down');
+    } catch (_) {}
+  }
+
+  // Close all admin WS connections
+  for (const ws of adminClients) {
+    try {
+      ws.close(1001, 'Server shutting down');
+    } catch (_) {}
+  }
+
+  // Close HTTP server
+  server.close(() => {
+    console.log('[SHUTDOWN] Server closed');
+    process.exit(0);
+  });
+
+  // Force exit after 5 seconds
+  setTimeout(() => {
+    console.error('[SHUTDOWN] Forced exit after timeout');
+    process.exit(1);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
