@@ -90,7 +90,7 @@ function connectWS() {
       state.ws = ws;
 
       // Re-join room if we were connected (include password for auth)
-      if (state.connected && state.roomId && state.roomPassword) {
+      if (state.connected && state.roomId) {
         log('Re-joining room:', state.roomId);
         wsSend({
           type: 'join',
@@ -166,8 +166,6 @@ function handleServerMessage(msg) {
         state.lastAction = 'Conectado a ' + state.roomName;
         saveState();
         openWATab();
-        // Activar overlay en la pestaña de WhatsApp
-        activateContentScript();
         if (pendingJoinCallback) {
           pendingJoinCallback({ success: true, roomName: state.roomName });
           pendingJoinCallback = null;
@@ -261,20 +259,6 @@ function getStateForPopup() {
   };
 }
 
-// --- Content Script Control ---
-
-function activateContentScript() {
-  if (state.waTabId) {
-    chrome.tabs.sendMessage(state.waTabId, { type: 'activate' }).catch(() => {});
-  }
-}
-
-function deactivateContentScript() {
-  if (state.waTabId) {
-    chrome.tabs.sendMessage(state.waTabId, { type: 'deactivate' }).catch(() => {});
-  }
-}
-
 // --- WhatsApp Tab Management ---
 
 function openWATab(url) {
@@ -310,8 +294,6 @@ function findOrCreateWATab(url) {
       if (url !== 'https://web.whatsapp.com') {
         chrome.tabs.update(state.waTabId, { url });
       }
-      // Activate overlay on the existing tab
-      activateContentScript();
     }
   });
 }
@@ -437,8 +419,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.pendingMessage = null;
       saveState();
 
-      // Deactivate overlay but keep the WA tab open
-      deactivateContentScript();
       state.waTabId = null;
       state.waLoggedIn = false;
 

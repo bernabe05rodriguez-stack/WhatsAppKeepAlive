@@ -1,11 +1,10 @@
 // content.js - WhatsApp KeepAlive Content Script
-// Solo bloquea WhatsApp Web cuando el usuario está conectado a una sala
+// WhatsApp Web queda libre para usar. Solo se bloquea brevemente al enviar un mensaje automatico.
 
 'use strict';
 
 (function () {
   const LOG_PREFIX = '[WKA]';
-  let overlayActive = false;
 
   function log(...args) {
     console.log(LOG_PREFIX, ...args);
@@ -15,44 +14,31 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // --- Overlay (solo se activa cuando estás en una sala) ---
+  // --- Overlay temporal (solo durante envio de mensaje) ---
 
-  function addOverlay() {
-    if (overlayActive) return;
-    const existing = document.getElementById('wka-overlay');
-    if (existing) existing.remove();
-
-    const overlay = document.createElement('div');
-    overlay.id = 'wka-overlay';
-    overlay.style.cssText = [
-      'position: fixed', 'top: 0', 'left: 0', 'width: 100%', 'height: 100%',
-      'z-index: 999999', 'background: rgba(0, 0, 0, 0.05)',
-      'display: flex', 'align-items: center', 'justify-content: center',
-      'pointer-events: all', 'cursor: not-allowed',
-    ].join(';');
-    overlay.innerHTML =
-      '<div style="background:rgba(0,0,0,0.7);color:white;padding:12px 24px;border-radius:8px;font-family:sans-serif;font-size:14px;">' +
-      'WhatsApp KeepAlive - Sesion activa</div>';
-    document.body.appendChild(overlay);
-    overlayActive = true;
-    log('Overlay activado');
+  function showSendingOverlay() {
+    let overlay = document.getElementById('wka-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'wka-overlay';
+      overlay.style.cssText = [
+        'position: fixed', 'top: 0', 'left: 0', 'width: 100%', 'height: 100%',
+        'z-index: 999999', 'background: rgba(0, 0, 0, 0.05)',
+        'display: flex', 'align-items: center', 'justify-content: center',
+        'pointer-events: all', 'cursor: not-allowed',
+      ].join(';');
+      overlay.innerHTML =
+        '<div style="background:rgba(0,0,0,0.7);color:white;padding:12px 24px;border-radius:8px;font-family:sans-serif;font-size:14px;">' +
+        'Enviando mensaje...</div>';
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+    overlay.style.pointerEvents = 'all';
   }
 
-  function removeOverlay() {
-    const existing = document.getElementById('wka-overlay');
-    if (existing) existing.remove();
-    overlayActive = false;
-    log('Overlay desactivado');
-  }
-
-  function disableOverlayTemporarily() {
-    const o = document.getElementById('wka-overlay');
-    if (o) o.style.pointerEvents = 'none';
-  }
-
-  function restoreOverlay() {
-    const o = document.getElementById('wka-overlay');
-    if (o) o.style.pointerEvents = 'all';
+  function hideSendingOverlay() {
+    const overlay = document.getElementById('wka-overlay');
+    if (overlay) overlay.remove();
   }
 
   // --- Detectar estado de WhatsApp Web ---
@@ -121,16 +107,17 @@
     log('Mensaje pendiente para:', pending.targetPhone);
 
     try {
+      showSendingOverlay();
+
       // Delay aleatorio 1-3 seg para simular humano
       await sleep(1000 + Math.random() * 2000);
 
       const input = await waitForElement(15000);
       if (!input) {
+        hideSendingOverlay();
         chrome.runtime.sendMessage({ type: 'message-result', success: false });
         return;
       }
-
-      disableOverlayTemporarily();
 
       input.focus();
       await sleep(300);
@@ -150,11 +137,11 @@
       }
 
       await sleep(500);
+      hideSendingOverlay();
       chrome.runtime.sendMessage({ type: 'message-result', success: true });
-      restoreOverlay();
     } catch (e) {
       log('Error enviando mensaje:', e);
-      restoreOverlay();
+      hideSendingOverlay();
       try { chrome.runtime.sendMessage({ type: 'message-result', success: false }); } catch (_) {}
     }
   }
@@ -162,12 +149,9 @@
   // --- Escuchar mensajes del background ---
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg.type === 'activate') {
-      addOverlay();
-      sendResponse({ ok: true });
-    }
-    if (msg.type === 'deactivate') {
-      removeOverlay();
+    if (msg.type === 'send-now') {
+      // Background pide enviar un mensaje, procesarlo
+      handlePendingMessage();
       sendResponse({ ok: true });
     }
     return false;
@@ -184,19 +168,9 @@
       chrome.runtime.sendMessage({ type: 'wa-status', status: status });
     } catch (e) {}
 
-    // Consultar al background si estamos conectados a una sala
-    try {
-      const state = await chrome.runtime.sendMessage({ type: 'get-state' });
-      if (state && state.connected) {
-        // Estamos en una sala: activar overlay y procesar mensajes
-        addOverlay();
-        if (status === 'ready') {
-          await handlePendingMessage();
-        }
-      }
-      // Si NO estamos conectados, WhatsApp Web queda libre para usar
-    } catch (e) {
-      log('Error consultando estado:', e);
+    // Si hay un mensaje pendiente, enviarlo
+    if (status === 'ready') {
+      await handlePendingMessage();
     }
   }
 
