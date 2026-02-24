@@ -1,0 +1,305 @@
+/* ===== RESET & BASE ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 350px;
+  min-height: 400px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: #f0f2f5;
+  overflow-x: hidden;
+}
+
+/* ===== STEPS ===== */
+.step {
+  display: none;
+  flex-direction: column;
+  min-height: 400px;
+  animation: fadeIn 0.25s ease;
+}
+
+.step.active {
+  display: flex;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== HEADER ===== */
+.header {
+  background: #075E54;
+  color: #fff;
+  padding: 18px 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.header h1 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* ===== BACK BUTTON ===== */
+.btn-back {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+
+.btn-back:hover {
+  opacity: 1;
+}
+
+/* ===== BODY ===== */
+.body {
+  padding: 20px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ===== FORM ===== */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.form-group input {
+  padding: 10px 12px;
+  border: 1.5px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  border-color: #25D366;
+}
+
+/* ===== BUTTONS ===== */
+.btn {
+  padding: 11px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #25D366;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1ebe5a;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #075E54;
+  border: 1.5px solid #075E54;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f0faf5;
+}
+
+.btn-danger {
+  background: #fff;
+  color: #e74c3c;
+  border: 1.5px solid #e74c3c;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #fdf2f2;
+}
+
+/* ===== VERSION TEXT ===== */
+.version-text {
+  text-align: center;
+  font-size: 11px;
+  color: #999;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+/* ===== ROOMS LIST ===== */
+.rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-card {
+  padding: 12px 14px;
+  background: #fff;
+  border: 1.5px solid #e8e8e8;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.room-card:hover {
+  border-color: #25D366;
+  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.15);
+}
+
+/* ===== LOADING ===== */
+.loading-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 30px 0;
+  color: #888;
+  font-size: 13px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #25D366;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== ERROR ===== */
+.error-msg {
+  background: #fdf2f2;
+  color: #c0392b;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid #f5c6cb;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ===== CONNECTED STEP ===== */
+.status-card {
+  background: #f0faf5;
+  border: 1.5px solid #25D366;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a7a3a;
+}
+
+/* ===== PULSE DOT ===== */
+.pulse-dot {
+  width: 12px;
+  height: 12px;
+  background: #25D366;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(37, 211, 102, 0.35);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%   { transform: scale(0.8); opacity: 1; }
+  70%  { transform: scale(1.3); opacity: 0; }
+  100% { transform: scale(0.8); opacity: 0; }
+}
+
+/* ===== WA STATUS ===== */
+.wa-status-card {
+  background: #fff;
+  border: 1.5px solid #e8e8e8;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.wa-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #444;
+}
+
+.wa-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.wa-icon-ok {
+  color: #25D366;
+}
+
+.wa-icon-warn {
+  color: #f39c12;
+}
+
+/* ===== LAST ACTION ===== */
+.last-action {
+  font-size: 12px;
+  color: #777;
+  text-align: center;
+  min-height: 16px;
+  padding: 4px 0;
+}

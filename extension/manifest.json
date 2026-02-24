@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "WhatsApp KeepAlive",
+  "version": "1.0.0",
+  "description": "Mantiene sesiones de WhatsApp Web activas y automatiza envio de mensajes",
+  "permissions": ["storage", "tabs", "alarms", "activeTab"],
+  "host_permissions": ["https://web.whatsapp.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WhatsApp KeepAlive"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

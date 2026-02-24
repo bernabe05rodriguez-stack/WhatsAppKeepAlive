@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp KeepAlive - Admin</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+  <!-- ==================== LOGIN ==================== -->
+  <section id="login-section">
+    <div class="login-card">
+      <h1 class="login-title">WhatsApp KeepAlive</h1>
+      <p class="login-subtitle">Panel de Administración</p>
+      <form id="login-form" autocomplete="on">
+        <div class="form-group">
+          <label for="login-user">Usuario</label>
+          <input type="text" id="login-user" name="username" placeholder="Ingresá tu usuario" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="login-pass">Contraseña</label>
+          <input type="password" id="login-pass" name="password" placeholder="Ingresá tu contraseña" required>
+        </div>
+        <div id="login-error" class="error-msg" hidden></div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Iniciar sesión</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ==================== DASHBOARD ==================== -->
+  <section id="dashboard-section" hidden>
+
+    <!-- Header -->
+    <header class="header">
+      <h1 class="header-title">WhatsApp KeepAlive</h1>
+      <div class="header-right">
+        <span id="connection-status" class="connection-indicator disconnected" title="WebSocket desconectado">
+          <span class="dot"></span>
+          <span class="connection-text">Desconectado</span>
+        </span>
+        <button class="btn btn-outline" id="logout-btn">Cerrar sesión</button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="rooms">Salas</button>
+      <button class="tab" data-tab="conversations">Conversaciones</button>
+      <button class="tab" data-tab="activity">Actividad</button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="content">
+
+      <!-- ========== TAB: SALAS ========== -->
+      <div id="rooms-tab" class="tab-panel active">
+        <div class="tab-header">
+          <h2>Salas</h2>
+          <button class="btn btn-primary" id="new-room-btn">+ Nueva Sala</button>
+        </div>
+        <div id="rooms-list" class="rooms-grid">
+          <!-- Se llena dinámicamente -->
+        </div>
+        <div id="rooms-empty" class="empty-state" hidden>
+          <p>No hay salas configuradas.</p>
+          <p class="text-light">Creá una sala para comenzar a mantener activos los números.</p>
+        </div>
+      </div>
+
+      <!-- ========== TAB: CONVERSACIONES ========== -->
+      <div id="conversations-tab" class="tab-panel">
+        <div class="tab-header">
+          <h2>Conversaciones</h2>
+          <button class="btn btn-primary" id="new-conversation-btn">+ Nueva Conversación</button>
+        </div>
+        <div id="conversations-list" class="conversations-list">
+          <!-- Se llena dinámicamente -->
+        </div>
+        <div id="conversations-empty" class="empty-state" hidden>
+          <p>No hay conversaciones creadas.</p>
+          <p class="text-light">Las conversaciones son los guiones que se envían en las salas.</p>
+        </div>
+      </div>
+
+      <!-- ========== TAB: ACTIVIDAD ========== -->
+      <div id="activity-tab" class="tab-panel">
+        <div class="tab-header">
+          <h2>Actividad reciente</h2>
+          <button class="btn btn-outline" id="clear-activity-btn">Limpiar</button>
+        </div>
+        <div id="activity-log" class="activity-log">
+          <!-- Se llena dinámicamente -->
+        </div>
+        <div id="activity-empty" class="empty-state" hidden>
+          <p>Sin actividad registrada.</p>
+          <p class="text-light">La actividad aparecerá a medida que las salas operen.</p>
+        </div>
+      </div>
+
+    </main>
+  </section>
+
+  <!-- ==================== MODAL: SALA ==================== -->
+  <div id="room-modal" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="room-modal-title">Nueva Sala</h3>
+        <button class="modal-close" data-close="room-modal">&times;</button>
+      </div>
+      <form id="room-form">
+        <input type="hidden" id="room-edit-id">
+        <div class="form-group">
+          <label for="room-name">Nombre de la sala</label>
+          <input type="text" id="room-name" placeholder="Ej: Sala Principal" required>
+        </div>
+        <div class="form-group">
+          <label for="room-password">Contraseña de acceso</label>
+          <input type="text" id="room-password" placeholder="Contraseña para los clientes" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="room-min-interval">Intervalo mín. (seg)</label>
+            <input type="number" id="room-min-interval" min="5" max="3600" value="20" required>
+          </div>
+          <div class="form-group">
+            <label for="room-max-interval">Intervalo máx. (seg)</label>
+            <input type="number" id="room-max-interval" min="5" max="3600" value="30" required>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-outline" data-close="room-modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: CONVERSACIÓN ==================== -->
+  <div id="conversation-modal" class="modal-overlay" hidden>
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="conversation-modal-title">Nueva Conversación</h3>
+        <button class="modal-close" data-close="conversation-modal">&times;</button>
+      </div>
+      <form id="conversation-form">
+        <input type="hidden" id="conversation-edit-id">
+        <div id="turns-container" class="turns-container">
+          <!-- Se llena dinámicamente -->
+        </div>
+        <div class="turns-actions">
+          <button type="button" class="btn btn-outline btn-sm" id="add-turn-btn">+ Agregar turno</button>
+          <button type="button" class="btn btn-danger btn-sm" id="remove-turn-btn">- Eliminar último turno</button>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-outline" data-close="conversation-modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: CONFIRMAR ELIMINACIÓN ==================== -->
+  <div id="confirm-modal" class="modal-overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Confirmar eliminación</h3>
+        <button class="modal-close" data-close="confirm-modal">&times;</button>
+      </div>
+      <p id="confirm-message" class="confirm-text">¿Estás seguro de que querés eliminar este elemento?</p>
+      <div class="form-actions">
+        <button type="button" class="btn btn-outline" data-close="confirm-modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirm-delete-btn">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
