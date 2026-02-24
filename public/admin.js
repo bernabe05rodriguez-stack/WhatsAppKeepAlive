@@ -20,6 +20,7 @@
   let roomsData = [];
   let conversationsData = [];
   let activityData = [];
+  let lastStatusData = null; // Last WS status update
 
   // ===================== DOM REFS =====================
   const $ = (sel) => document.querySelector(sel);
@@ -231,6 +232,7 @@
   async function loadRooms() {
     try {
       roomsData = await api('/api/rooms');
+      applyStatusToRooms();
       renderRooms();
     } catch (err) {
       console.error('Error cargando salas:', err);
@@ -815,20 +817,29 @@
   function handleStatusUpdate(data) {
     if (!data || !data.rooms) return;
 
-    // Actualizar los datos locales con la info de usuarios en tiempo real
-    const liveRooms = data.rooms;
-
-    roomsData.forEach((room) => {
-      const live = liveRooms.find((lr) => lr.id === room.id);
-      if (live) {
-        room.users = live.users || [];
-      }
-    });
+    lastStatusData = data;
+    applyStatusToRooms();
 
     // Si estamos en la pestaña de salas, re-renderizar
     if (currentTab === 'rooms') {
       renderRooms();
     }
+  }
+
+  function applyStatusToRooms() {
+    if (!lastStatusData || !lastStatusData.rooms) return;
+
+    const liveRooms = lastStatusData.rooms;
+
+    roomsData.forEach((room) => {
+      const live = liveRooms.find((lr) => lr.id === room.id);
+      if (live) {
+        room.users = (live.activeUsers || []).map((u) => ({
+          phone: u.phone,
+          status: u.available ? 'available' : 'busy',
+        }));
+      }
+    });
   }
 
   // ===================== MODAL HELPERS =====================
