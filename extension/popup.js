@@ -30,9 +30,6 @@
     btnJoin:         document.getElementById('btn-join'),
     passwordError:   document.getElementById('password-error'),
     connectedRoomName: document.getElementById('connected-room-name'),
-    waStatusOk:   document.getElementById('wa-status-ok'),
-    waStatusWarn:  document.getElementById('wa-status-warn'),
-    btnOpenWa:    document.getElementById('btn-open-wa'),
     lastAction:   document.getElementById('last-action'),
     btnLeave:     document.getElementById('btn-leave'),
   };
@@ -86,7 +83,6 @@
       showConnectedView(state);
       showStep('connected');
     } else if (stored.phone) {
-      // Ya tiene telefono guardado, ir directo a salas
       const serverUrl = stored.serverUrl || DEFAULT_SERVER;
       await chrome.storage.local.set({ serverUrl });
       await sendMsg({ type: 'set-config', data: { serverUrl, phone: stored.phone } });
@@ -154,7 +150,6 @@
           hideError(els.passwordError);
           showStep('password');
         } else {
-          // Sin contraseña, unirse directo
           joinRoom('');
         }
       });
@@ -182,7 +177,6 @@
       showConnectedView(response);
       showStep('connected');
     } else {
-      // Si fallo un join directo (sin password), mostrar paso de password
       if (!selectedRoom.hasPassword) {
         els.passwordTitle.textContent = selectedRoom.name;
         els.inputPassword.value = '';
@@ -202,23 +196,8 @@
 
   function showConnectedView(state) {
     els.connectedRoomName.textContent = selectedRoom.name || state?.roomName || 'Sala';
-    updateWaStatus(state?.waLoggedIn || false);
     els.lastAction.textContent = state?.lastAction || '';
   }
-
-  function updateWaStatus(loggedIn) {
-    if (loggedIn) {
-      els.waStatusOk.classList.remove('hidden');
-      els.waStatusWarn.classList.add('hidden');
-      els.btnOpenWa.classList.add('hidden');
-    } else {
-      els.waStatusOk.classList.add('hidden');
-      els.waStatusWarn.classList.remove('hidden');
-      els.btnOpenWa.classList.remove('hidden');
-    }
-  }
-
-  els.btnOpenWa.addEventListener('click', () => sendMsg({ type: 'open-wa' }));
 
   els.btnLeave.addEventListener('click', async () => {
     els.btnLeave.disabled = true;
@@ -240,7 +219,6 @@
           selectedRoom.name = data.roomName;
           els.connectedRoomName.textContent = data.roomName;
         }
-        updateWaStatus(data.waLoggedIn || false);
         if (data.lastAction) els.lastAction.textContent = data.lastAction;
         if (!steps.connected.classList.contains('active')) {
           showConnectedView(data);
