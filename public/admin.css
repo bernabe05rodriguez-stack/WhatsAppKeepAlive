@@ -790,6 +790,10 @@ body {
   animation: fadeIn 0.2s ease forwards;
 }
 
+.modal-overlay[hidden] {
+  display: none;
+}
+
 @keyframes fadeIn {
   to {
     opacity: 1;
