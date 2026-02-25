@@ -416,13 +416,23 @@ function checkAndPair(roomId) {
     if (pair.roomId === roomId) return; // already has an active exchange
   }
 
-  // Get all available users in this room (exclude cooldown)
-  const available = [];
+  // Count ALL users in this room
+  const allUsers = [];
   for (const [phone, user] of extUsers) {
-    if (user.roomId === roomId && user.available === true && !cooldownPhones.has(phone)) {
-      available.push(user);
+    if (user.roomId === roomId) {
+      allUsers.push({ phone, user });
     }
   }
+
+  if (allUsers.length < 2) return;
+
+  // Wait until ALL users are available (not busy, not in cooldown)
+  // This ensures truly random selection from the full pool
+  for (const { phone, user } of allUsers) {
+    if (!user.available || cooldownPhones.has(phone)) return;
+  }
+
+  const available = allUsers.map(u => u.user);
 
   if (available.length < 2) return;
 
