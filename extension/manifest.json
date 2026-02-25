@@ -5,12 +5,22 @@
   "description": "Mantiene sesiones de WhatsApp Web activas y automatiza envio de mensajes",
   "permissions": ["storage", "tabs", "alarms", "activeTab"],
   "host_permissions": ["https://web.whatsapp.com/*"],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "WhatsApp KeepAlive"
+    "default_title": "WhatsApp KeepAlive",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "content_scripts": [
     {
