@@ -338,6 +338,26 @@ function getStateForPopup() {
   };
 }
 
+function autoLeaveRoom(reason) {
+  if (!state.connected) {
+    notifyPopup({ type: 'state-update', data: getStateForPopup() });
+    return;
+  }
+  log('Auto-leaving room:', reason);
+  wsSend({ type: 'leave', data: { roomId: state.roomId } });
+  state.connected = false;
+  state.roomId = '';
+  state.roomName = '';
+  state.roomPassword = '';
+  state.lastAction = '';
+  state.currentChatPhone = null;
+  messageQueue = [];
+  isSendingMessage = false;
+  clearSafetyTimer();
+  saveState();
+  notifyPopup({ type: 'state-update', data: getStateForPopup() });
+}
+
 // --- WhatsApp Tab Management ---
 
 function openWATab(url) {
@@ -398,7 +418,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     state.waTabId = null;
     state.waLoggedIn = false;
     state.currentChatPhone = null;
-    notifyPopup({ type: 'state-update', data: getStateForPopup() });
+    autoLeaveRoom('WA tab closed');
   }
 });
 
@@ -552,9 +572,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       }
       const status = msg.status;
+      const wasLoggedIn = state.waLoggedIn;
       state.waLoggedIn = (status === 'ready');
       log('WA status:', status, '-> waLoggedIn:', state.waLoggedIn);
-      notifyPopup({ type: 'state-update', data: getStateForPopup() });
+      // If session became unavailable while connected, auto-leave
+      if (wasLoggedIn && !state.waLoggedIn && state.connected) {
+        autoLeaveRoom('WA session lost');
+      } else {
+        notifyPopup({ type: 'state-update', data: getStateForPopup() });
+      }
       sendResponse({ ok: true });
       return false;
     }

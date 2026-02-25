@@ -856,7 +856,8 @@ wssExt.on('connection', (ws) => {
           const roomList = Array.from(rooms.values()).map(r => ({
             id: r.id,
             name: r.name,
-            hasPassword: !!r.password
+            hasPassword: !!r.password,
+            userCount: getUserCountInRoom(r.id)
           }));
           ws.send(JSON.stringify({ type: 'rooms', data: roomList }));
           break;

@@ -30,6 +30,7 @@
     btnJoin:         document.getElementById('btn-join'),
     passwordError:   document.getElementById('password-error'),
     connectedRoomName: document.getElementById('connected-room-name'),
+    connectedPhone: document.getElementById('connected-phone'),
     userCount:    document.getElementById('user-count'),
     lastAction:   document.getElementById('last-action'),
     btnLeave:     document.getElementById('btn-leave'),
@@ -139,7 +140,19 @@
     rooms.forEach((room) => {
       const card = document.createElement('div');
       card.className = 'room-card';
-      card.textContent = room.name || room.id;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'room-card-name';
+      nameSpan.textContent = room.name || room.id;
+      card.appendChild(nameSpan);
+
+      if (room.userCount !== undefined) {
+        const countSpan = document.createElement('span');
+        countSpan.className = 'room-card-count';
+        countSpan.textContent = room.userCount + (room.userCount === 1 ? ' usuario' : ' usuarios');
+        card.appendChild(countSpan);
+      }
+
       card.addEventListener('click', () => {
         selectedRoom.id = room.id;
         selectedRoom.name = room.name || room.id;
@@ -199,6 +212,9 @@
     els.connectedRoomName.textContent = selectedRoom.name || state?.roomName || 'Sala';
     els.lastAction.textContent = state?.lastAction || '';
     updateUserCount(state?.userCount);
+    if (state?.phone) {
+      els.connectedPhone.textContent = '+' + state.phone;
+    }
   }
 
   function updateUserCount(count) {
