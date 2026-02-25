@@ -18,7 +18,7 @@ let state = {
   ws: null,
   lastAction: '',
   userCount: 0,
-  currentChatPhone: null, // telefono del chat actualmente abierto en WA
+  // currentChatPhone removed - no URL navigation, content script handles everything
 };
 
 // Track pending room requests so we can respond to popup
@@ -147,23 +147,6 @@ function ensureWS() {
   }
 }
 
-// --- Send URL helper ---
-
-function navigateToSendUrl(phone, message) {
-  const sendUrl = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(message);
-  state.currentChatPhone = phone;
-  chrome.tabs.update(state.waTabId, { url: sendUrl }).catch(() => {
-    log('Failed to navigate WA tab');
-    state.waTabId = null;
-    state.currentChatPhone = null;
-    wsSend({ type: 'message-sent', data: { success: false } });
-    // Reset queue so next messages can proceed
-    clearSafetyTimer();
-    isSendingMessage = false;
-    processMessageQueue();
-  });
-}
-
 function clearSafetyTimer() {
   if (sendingSafetyTimer) {
     clearTimeout(sendingSafetyTimer);
@@ -201,37 +184,24 @@ function processMessageQueue() {
     wsSend({ type: 'message-sent', data: { success: false } });
     clearSafetyTimer();
     isSendingMessage = false;
-    processMessageQueue(); // process next
+    processMessageQueue();
     return;
   }
 
   const phone = data.targetPhone.replace(/[^0-9]/g, '');
 
-  if (state.currentChatPhone === phone) {
-    // Mismo chat ya abierto → escribir directo sin recargar
-    log('Mismo chat abierto, enviando directo (type-and-send)');
-    chrome.tabs.sendMessage(state.waTabId, {
-      type: 'type-and-send',
-      data: { message: data.message },
-    }).catch(() => {
-      // Content script no responde, caer a URL
-      log('Content script no responde, cayendo a URL');
-      state.currentChatPhone = null;
-      navigateToSendUrl(phone, data.message);
-    });
-  } else {
-    // Chat diferente → buscar en WA sin recargar (fallback a URL solo si no encuentra)
-    log('Nuevo destino, intentando search-and-send');
-    state.currentChatPhone = phone;
-    chrome.tabs.sendMessage(state.waTabId, {
-      type: 'search-and-send',
-      data: { phone, message: data.message },
-    }).catch(() => {
-      // Content script no responde, caer a URL
-      log('Content script no responde para search, cayendo a URL');
-      navigateToSendUrl(phone, data.message);
-    });
-  }
+  // Siempre usar content script para enviar. NUNCA navegar/recargar la pagina.
+  log('Enviando via content script a', phone);
+  chrome.tabs.sendMessage(state.waTabId, {
+    type: 'send-to-phone',
+    data: { phone, message: data.message },
+  }).catch(() => {
+    log('Content script no responde');
+    wsSend({ type: 'message-sent', data: { success: false } });
+    clearSafetyTimer();
+    isSendingMessage = false;
+    processMessageQueue();
+  });
 }
 
 // --- Handle messages from server ---
@@ -358,7 +328,6 @@ function autoLeaveRoom(reason) {
   state.roomName = '';
   state.roomPassword = '';
   state.lastAction = '';
-  state.currentChatPhone = null;
   messageQueue = [];
   isSendingMessage = false;
   clearSafetyTimer();
@@ -425,8 +394,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     log('WA tab was closed');
     state.waTabId = null;
     state.waLoggedIn = false;
-    state.currentChatPhone = null;
-    autoLeaveRoom('WA tab closed');
+      autoLeaveRoom('WA tab closed');
   }
 });
 
@@ -534,8 +502,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.roomName = '';
       state.roomPassword = '';
       state.lastAction = '';
-      state.currentChatPhone = null;
-      // Clear message queue and safety timer
+          // Clear message queue and safety timer
       messageQueue = [];
       isSendingMessage = false;
       clearSafetyTimer();
