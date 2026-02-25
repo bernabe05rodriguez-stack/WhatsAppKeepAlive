@@ -21,7 +21,7 @@ const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
 
 const DATA_DIR = path.join(__dirname, 'data');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
-const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
+const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
 const EXT_DIR = path.join(__dirname, 'extension');
 
@@ -70,8 +70,14 @@ function shuffle(array) {
 /** Map<roomId, { id, name, password, minInterval, maxInterval }> */
 let rooms = new Map();
 
-/** Array of { id, turns: [{ role: 'A'|'B', message: string }] } */
-let conversations = [];
+/** Array of { id, message: string } */
+let messages = [];
+
+/** Global message index - rotates through the list */
+let messageIndex = 0;
+
+/** Map<phone, phone> - last partner for each user (to avoid repeating) */
+const lastPartner = new Map();
 
 /** Map<phone, { phone, roomId, ws, available, pendingResolve }> */
 const extUsers = new Map();
@@ -88,11 +94,11 @@ const activityLog = [];
 /** Map<roomId, intervalId> - running pairing engines */
 const roomEngines = new Map();
 
-/** Active conversation pairs for live monitoring */
+/** Active exchange pairs for live monitoring */
 const activePairs = new Map();
 let nextPairId = 0;
 
-/** Cooldown set - phones that recently finished a conversation (5s cooldown) */
+/** Cooldown set - phones that recently finished an exchange (5s cooldown) */
 const cooldownPhones = new Set();
 const COOLDOWN_MS = 5000;
 
@@ -102,133 +108,30 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_BLOCK_MS = 5 * 60 * 1000; // 5 minutes
 
 // =============================================================================
-// DEFAULT CONVERSATIONS (Argentine Spanish)
+// DEFAULT MESSAGES (Argentine Spanish - generic, one-liners)
 // =============================================================================
 
-const DEFAULT_CONVERSATIONS = [
-  {
-    id: 'c1',
-    turns: [
-      { role: 'A', message: 'Hola, buen dia!' },
-      { role: 'B', message: 'Hola! Que tal, como andas?' },
-      { role: 'A', message: 'Todo bien por aca, laburando como siempre' },
-      { role: 'B', message: 'Jaja igual que yo. Bueno, que tengas buen dia!' },
-      { role: 'A', message: 'Igualmente! Nos hablamos' }
-    ]
-  },
-  {
-    id: 'c2',
-    turns: [
-      { role: 'A', message: 'Che, te prendes a hacer algo el finde?' },
-      { role: 'B', message: 'Si! Que tenes pensado?' },
-      { role: 'A', message: 'Estaba pensando en ir al cine o a comer algo' },
-      { role: 'B', message: 'Uh re copado, yo prefiero ir a comer. Hay un lugar nuevo en Palermo' },
-      { role: 'A', message: 'Dale, me re copa. A que hora nos vemos?' },
-      { role: 'B', message: 'Tipo 9 de la noche te parece?' },
-      { role: 'A', message: 'Joya, ahi queda entonces. Nos vemos el sabado!' },
-      { role: 'B', message: 'Genial! Nos vemos, abrazo' }
-    ]
-  },
-  {
-    id: 'c3',
-    turns: [
-      { role: 'A', message: 'Feliz cumple!!! Que la pases re lindo hoy' },
-      { role: 'B', message: 'Muchas gracias!! Que tierno/a' },
-      { role: 'A', message: 'Vas a hacer algo para festejar?' },
-      { role: 'B', message: 'Si, a la noche hacemos una juntada en casa con amigos' },
-      { role: 'A', message: 'Que bueno! Necesitas que lleve algo?' },
-      { role: 'B', message: 'Si podes traer algo para tomar estaria genial' },
-      { role: 'A', message: 'Listo, llevo unas birras y un fernet' },
-      { role: 'B', message: 'Gracias! Te espero a las 9 entonces' }
-    ]
-  },
-  {
-    id: 'c4',
-    turns: [
-      { role: 'A', message: 'Como te fue en la entrevista de laburo?' },
-      { role: 'B', message: 'Bien! Creo que les gusto mi perfil' },
-      { role: 'A', message: 'Que buena onda! De que es el puesto?' },
-      { role: 'B', message: 'Es para desarrollo web en una startup. Pagan bastante bien' },
-      { role: 'A', message: 'Re bien! Y cuando te dicen algo?' },
-      { role: 'B', message: 'Me dijeron que en una semana me dan una respuesta' },
-      { role: 'A', message: 'Bueno ojala que si! Te mereces algo bueno' },
-      { role: 'B', message: 'Gracias! Yo tambien espero que salga. Te aviso cuando sepa algo' }
-    ]
-  },
-  {
-    id: 'c5',
-    turns: [
-      { role: 'A', message: 'Viste la serie nueva de Netflix? La de los zombies' },
-      { role: 'B', message: 'No, cual? Estoy buscando algo para ver' },
-      { role: 'A', message: 'Se llama "Ultimo refugio". Esta muy buena, la termine en dos dias' },
-      { role: 'B', message: 'Ah la tengo en mi lista pero no la empece. Engancha mucho?' },
-      { role: 'A', message: 'Si mal, los primeros dos capitulos son tranqui pero despues se pone re intensa' },
-      { role: 'B', message: 'Dale, la arranco esta noche entonces' },
-      { role: 'A', message: 'Despues contame que te parecio!' }
-    ]
-  },
-  {
-    id: 'c6',
-    turns: [
-      { role: 'A', message: 'Que calor hace hoy dios mio' },
-      { role: 'B', message: 'Mal! Yo estoy derretido en la oficina, el aire no enfria nada' },
-      { role: 'A', message: 'Aca en casa prendimos el ventilador pero tira aire caliente jaja' },
-      { role: 'B', message: 'Dicen que manana baja un poco la temperatura por suerte' },
-      { role: 'A', message: 'Ojala! Ya no se puede vivir asi' },
-      { role: 'B', message: 'Tal cual. Bueno me voy a buscar un helado, nos hablamos!' },
-      { role: 'A', message: 'Jaja buen plan. Suerte con el calor!' }
-    ]
-  },
-  {
-    id: 'c7',
-    turns: [
-      { role: 'A', message: 'Che sabes de algun lugar bueno para comer empanadas?' },
-      { role: 'B', message: 'Si! Hay uno que se llama "El criollo" que son buenisimas' },
-      { role: 'A', message: 'Donde queda?' },
-      { role: 'B', message: 'En la calle Corrientes, a tres cuadras del obelisco mas o menos' },
-      { role: 'A', message: 'Ah re bien. Y que te pediste vos?' },
-      { role: 'B', message: 'Las de carne cortada a cuchillo son lo mejor. Y las de jamon y queso tambien van' },
-      { role: 'A', message: 'Dale, voy a ir a probar. Gracias por la data!' },
-      { role: 'B', message: 'De nada! Despues contame que tal' }
-    ]
-  },
-  {
-    id: 'c8',
-    turns: [
-      { role: 'A', message: 'Viste el partido de anoche? Que locura' },
-      { role: 'B', message: 'Si lo vi! No lo podia creer, que golazo el del final' },
-      { role: 'A', message: 'Mal, yo ya lo daba por perdido y de la nada pum' },
-      { role: 'B', message: 'El pibe ese nuevo juega muy bien. Se merecia el gol' },
-      { role: 'A', message: 'Si, tiene mucho futuro. Ojala no lo vendan rapido' },
-      { role: 'B', message: 'Jaja olvidate, ya deben estar haciendo fila los europeos' }
-    ]
-  },
-  {
-    id: 'c9',
-    turns: [
-      { role: 'A', message: 'Te cambiaste el celular al final?' },
-      { role: 'B', message: 'Si! Me compre el Samsung nuevo, esta muy bueno' },
-      { role: 'A', message: 'Ah genial. Y la camara que tal? Vi que le meten mucha publicidad a eso' },
-      { role: 'B', message: 'La verdad que si, las fotos salen increibles. De noche sobre todo' },
-      { role: 'A', message: 'Yo estoy pensando en cambiar el mio pero estan carisimos' },
-      { role: 'B', message: 'Si estan salados. Yo lo compre en 12 cuotas sin interes' },
-      { role: 'A', message: 'Donde? Pasa el dato!' },
-      { role: 'B', message: 'En Mercado Libre, con tarjeta del banco. Fijate que capaz todavia esta la promo' }
-    ]
-  },
-  {
-    id: 'c10',
-    turns: [
-      { role: 'A', message: 'Ey como estas? Hace rato no hablamos' },
-      { role: 'B', message: 'Hola! Si posta, estuve re desaparecido. Todo bien?' },
-      { role: 'A', message: 'Si todo tranqui, aca andamos. Vos que contas?' },
-      { role: 'B', message: 'Nada, laburo y mas laburo. Pero bien dentro de todo' },
-      { role: 'A', message: 'Me alegro. Tendriamos que juntarnos un dia de estos a tomar unas birras' },
-      { role: 'B', message: 'Dale si! Hace mucho que no nos vemos. Coordino y te aviso' },
-      { role: 'A', message: 'Joya, quedo atento. Un abrazo!' },
-      { role: 'B', message: 'Abrazo grande! Hablamos pronto' }
-    ]
-  }
+const DEFAULT_MESSAGES = [
+  { id: 'm1', message: 'Hola! Como andas?' },
+  { id: 'm2', message: 'Todo bien por aca, vos?' },
+  { id: 'm3', message: 'Buenas! Que tal todo?' },
+  { id: 'm4', message: 'Ey que onda! Hace rato no hablamos' },
+  { id: 'm5', message: 'Hola! Aca andamos, laburando como siempre' },
+  { id: 'm6', message: 'Que tal? Todo tranqui?' },
+  { id: 'm7', message: 'Buenas buenas! Como va eso?' },
+  { id: 'm8', message: 'Hola! Que contas de nuevo?' },
+  { id: 'm9', message: 'Ey! Como va todo por alla?' },
+  { id: 'm10', message: 'Que onda! Tanto tiempo' },
+  { id: 'm11', message: 'Hola! Paso a saludar, un abrazo!' },
+  { id: 'm12', message: 'Como estas? Espero que todo bien!' },
+  { id: 'm13', message: 'Buenas! Aca reportandome jaja' },
+  { id: 'm14', message: 'Hola! Que tal el dia?' },
+  { id: 'm15', message: 'Ey como va? Todo en orden?' },
+  { id: 'm16', message: 'Que tal! Aca andamos bien, vos?' },
+  { id: 'm17', message: 'Hola! Justo me acorde de vos, como estas?' },
+  { id: 'm18', message: 'Buenas! Que se cuenta?' },
+  { id: 'm19', message: 'Hola! Todo bien? Saludos!' },
+  { id: 'm20', message: 'Que onda! Espero que andes bien!' },
 ];
 
 // =============================================================================
@@ -259,19 +162,19 @@ function loadData() {
     console.log('[DATA] No rooms file found, starting empty');
   }
 
-  // Load conversations
-  if (fs.existsSync(CONVERSATIONS_FILE)) {
+  // Load messages
+  if (fs.existsSync(MESSAGES_FILE)) {
     try {
-      conversations = JSON.parse(fs.readFileSync(CONVERSATIONS_FILE, 'utf-8'));
-      console.log(`[DATA] Loaded ${conversations.length} conversations`);
+      messages = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf-8'));
+      console.log(`[DATA] Loaded ${messages.length} messages`);
     } catch (err) {
-      console.error('[DATA] Error loading conversations:', err.message);
-      conversations = [...DEFAULT_CONVERSATIONS];
+      console.error('[DATA] Error loading messages:', err.message);
+      messages = [...DEFAULT_MESSAGES];
     }
   } else {
-    conversations = [...DEFAULT_CONVERSATIONS];
-    saveConversations();
-    console.log('[DATA] Initialized with default conversations');
+    messages = [...DEFAULT_MESSAGES];
+    saveMessages();
+    console.log('[DATA] Initialized with default messages');
   }
 
   // Load activity log
@@ -296,12 +199,12 @@ function saveRooms() {
   }
 }
 
-function saveConversations() {
+function saveMessages() {
   ensureDataDir();
   try {
-    fs.writeFileSync(CONVERSATIONS_FILE, JSON.stringify(conversations, null, 2), 'utf-8');
+    fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2), 'utf-8');
   } catch (err) {
-    console.error('[DATA] Error saving conversations:', err.message);
+    console.error('[DATA] Error saving messages:', err.message);
   }
 }
 
@@ -364,10 +267,8 @@ function getRoomStatuses() {
           id: pair.id,
           phoneA: pair.phoneA,
           phoneB: pair.phoneB,
-          totalTurns: pair.totalTurns,
-          currentTurn: pair.currentTurn,
-          currentSender: pair.currentSender,
-          currentMessage: pair.currentMessage,
+          messageA: pair.messageA,
+          messageB: pair.messageB,
           startedAt: pair.startedAt,
         });
       }
@@ -440,35 +341,49 @@ function checkAndPair(roomId) {
 
   if (available.length < 2) return;
 
+  if (messages.length === 0) {
+    console.warn('[ENGINE] No messages available, skipping pairing');
+    return;
+  }
+
   shuffle(available);
 
-  // Pair users while we have at least 2 available
+  // Try to pair users avoiding recent partners
   while (available.length >= 2) {
     const userA = available.pop();
-    const userB = available.pop();
+
+    // Find best partner: prefer someone who wasn't A's last partner
+    let bestIdx = 0;
+    for (let i = 0; i < available.length; i++) {
+      if (lastPartner.get(userA.phone) !== available[i].phone) {
+        bestIdx = i;
+        break;
+      }
+    }
+    const userB = available.splice(bestIdx, 1)[0];
 
     // Mark as busy immediately
     userA.available = false;
     userB.available = false;
 
-    // Pick a random conversation
-    if (conversations.length === 0) {
-      console.warn('[ENGINE] No conversations available, skipping pairing');
-      userA.available = true;
-      userB.available = true;
-      return;
-    }
-    const conv = conversations[randomBetween(0, conversations.length - 1)];
+    // Track partners for rotation
+    lastPartner.set(userA.phone, userB.phone);
+    lastPartner.set(userB.phone, userA.phone);
 
-    logActivity(roomId, 'pair', `Paired ${userA.phone} with ${userB.phone} (conv: ${conv.id})`);
+    // Get next 2 messages from rotating list
+    const msgA = messages[messageIndex % messages.length].message;
+    const msgB = messages[(messageIndex + 1) % messages.length].message;
+    messageIndex += 2;
+
+    logActivity(roomId, 'pair', `${userA.phone} <-> ${userB.phone}`);
     broadcastStatus();
 
-    // Run the conversation asynchronously
-    runConversation(roomId, userA, userB, conv);
+    // Run exchange asynchronously (both send at the same time)
+    runExchange(roomId, userA, userB, msgA, msgB);
   }
 }
 
-async function runConversation(roomId, userA, userB, conv) {
+async function runExchange(roomId, userA, userB, msgA, msgB) {
   const room = rooms.get(roomId);
   if (!room) return;
 
@@ -479,10 +394,8 @@ async function runConversation(roomId, userA, userB, conv) {
     roomId,
     phoneA: userA.phone,
     phoneB: userB.phone,
-    totalTurns: conv.turns.length,
-    currentTurn: 0,
-    currentSender: '',
-    currentMessage: '',
+    messageA: msgA,
+    messageB: msgB,
     startedAt: new Date().toISOString(),
   });
   broadcastStatus();
@@ -491,45 +404,36 @@ async function runConversation(roomId, userA, userB, conv) {
   const maxMs = (room.maxInterval || 15) * 1000;
 
   try {
-    for (let i = 0; i < conv.turns.length; i++) {
-      const turn = conv.turns[i];
+    // Wait random delay before sending
+    const delay = randomBetween(minMs, maxMs);
+    await sleep(delay);
 
-      // Wait random delay between min and max interval
-      const delay = randomBetween(minMs, maxMs);
-      await sleep(delay);
+    // Check both users still connected
+    if (!extUsers.has(userA.phone) || !extUsers.has(userB.phone)) {
+      logActivity(roomId, 'disconnect', `Intercambio interrumpido: usuario desconectado`);
+    } else {
+      // Send BOTH messages simultaneously (A→B and B→A)
+      const [successA, successB] = await Promise.all([
+        sendMessageWithRetry(userA, userB.phone, msgA),
+        sendMessageWithRetry(userB, userA.phone, msgB),
+      ]);
 
-      // Check both users still connected
-      if (!extUsers.has(userA.phone) || !extUsers.has(userB.phone)) {
-        logActivity(roomId, 'disconnect', `Conversacion interrumpida: usuario desconectado`);
-        break;
+      if (successA) {
+        const previewA = msgA.length > 50 ? msgA.substring(0, 50) + '...' : msgA;
+        logActivity(roomId, 'message', `${userA.phone} -> ${userB.phone}: "${previewA}"`);
+      } else {
+        logActivity(roomId, 'error', `Fallo: ${userA.phone} -> ${userB.phone}`);
       }
 
-      // Determine sender and receiver based on role
-      const sender = turn.role === 'A' ? userA : userB;
-      const receiver = turn.role === 'A' ? userB : userA;
-
-      // Update pair tracking
-      const pair = activePairs.get(pairId);
-      if (pair) {
-        pair.currentTurn = i + 1;
-        pair.currentSender = sender.phone;
-        pair.currentMessage = turn.message;
+      if (successB) {
+        const previewB = msgB.length > 50 ? msgB.substring(0, 50) + '...' : msgB;
+        logActivity(roomId, 'message', `${userB.phone} -> ${userA.phone}: "${previewB}"`);
+      } else {
+        logActivity(roomId, 'error', `Fallo: ${userB.phone} -> ${userA.phone}`);
       }
-      broadcastStatus();
-
-      // Send message with retry logic
-      const success = await sendMessageWithRetry(sender, receiver.phone, turn.message);
-      if (!success) {
-        logActivity(roomId, 'error', `Fallo envio (${MAX_RETRIES + 1} intentos): ${sender.phone} -> ${receiver.phone}`);
-        break;
-      }
-
-      // Log each successful message
-      const preview = turn.message.length > 50 ? turn.message.substring(0, 50) + '...' : turn.message;
-      logActivity(roomId, 'message', `${sender.phone} -> ${receiver.phone}: "${preview}"`);
     }
   } catch (err) {
-    console.error('[ENGINE] Error in conversation:', err.message);
+    console.error('[ENGINE] Error in exchange:', err.message);
     logActivity(roomId, 'error', `Error: ${err.message}`);
   }
 
@@ -550,7 +454,7 @@ async function runConversation(roomId, userA, userB, conv) {
     userB.available = true;
   }
 
-  logActivity(roomId, 'done', `Conversacion finalizada: ${userA.phone} <-> ${userB.phone}`);
+  logActivity(roomId, 'done', `Intercambio finalizado: ${userA.phone} <-> ${userB.phone}`);
   broadcastStatus();
 }
 
@@ -800,54 +704,51 @@ app.delete('/api/rooms/:id', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-// --- Conversations CRUD ---
-app.get('/api/conversations', authMiddleware, (req, res) => {
-  res.json(conversations);
+// --- Messages CRUD ---
+app.get('/api/messages', authMiddleware, (req, res) => {
+  res.json(messages);
 });
 
-app.post('/api/conversations', authMiddleware, (req, res) => {
-  const { turns } = req.body || {};
-  if (!turns || !Array.isArray(turns) || turns.length === 0) {
-    return res.status(400).json({ error: 'turns array is required' });
+app.post('/api/messages', authMiddleware, (req, res) => {
+  const { message } = req.body || {};
+  if (!message || typeof message !== 'string' || message.trim().length === 0) {
+    return res.status(400).json({ error: 'message text is required' });
   }
-  // Validate message lengths (WhatsApp limit ~4096)
-  for (const turn of turns) {
-    if (!turn.message || !turn.role) {
-      return res.status(400).json({ error: 'Each turn must have role and message' });
-    }
-    if (turn.message.length > 4096) {
+  if (message.length > 4096) {
+    return res.status(400).json({ error: 'Message exceeds 4096 character limit' });
+  }
+  const msg = { id: genId(), message: message.trim() };
+  messages.push(msg);
+  saveMessages();
+  console.log(`[MESSAGES] Created message ${msg.id}`);
+  res.json(msg);
+});
+
+app.put('/api/messages/:id', authMiddleware, (req, res) => {
+  const idx = messages.findIndex(m => m.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Message not found' });
+  }
+  const { message } = req.body || {};
+  if (message !== undefined) {
+    if (message.length > 4096) {
       return res.status(400).json({ error: 'Message exceeds 4096 character limit' });
     }
+    messages[idx].message = message.trim();
   }
-  const conv = { id: genId(), turns };
-  conversations.push(conv);
-  saveConversations();
-  console.log(`[CONVERSATIONS] Created conversation ${conv.id} (${turns.length} turns)`);
-  res.json(conv);
+  saveMessages();
+  console.log(`[MESSAGES] Updated message ${req.params.id}`);
+  res.json(messages[idx]);
 });
 
-app.put('/api/conversations/:id', authMiddleware, (req, res) => {
-  const idx = conversations.findIndex(c => c.id === req.params.id);
+app.delete('/api/messages/:id', authMiddleware, (req, res) => {
+  const idx = messages.findIndex(m => m.id === req.params.id);
   if (idx === -1) {
-    return res.status(404).json({ error: 'Conversation not found' });
+    return res.status(404).json({ error: 'Message not found' });
   }
-  const { turns } = req.body || {};
-  if (turns !== undefined) {
-    conversations[idx].turns = turns;
-  }
-  saveConversations();
-  console.log(`[CONVERSATIONS] Updated conversation ${req.params.id}`);
-  res.json(conversations[idx]);
-});
-
-app.delete('/api/conversations/:id', authMiddleware, (req, res) => {
-  const idx = conversations.findIndex(c => c.id === req.params.id);
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Conversation not found' });
-  }
-  conversations.splice(idx, 1);
-  saveConversations();
-  console.log(`[CONVERSATIONS] Deleted conversation ${req.params.id}`);
+  messages.splice(idx, 1);
+  saveMessages();
+  console.log(`[MESSAGES] Deleted message ${req.params.id}`);
   res.json({ ok: true });
 });
 
@@ -1104,7 +1005,7 @@ wssExt.on('connection', (ws) => {
         user.pendingResolve(false);
       }
 
-      // Mark available so conversation can abort cleanly
+      // Mark available so exchange can abort cleanly
       user.available = true;
 
       extUsers.delete(userPhone);
@@ -1139,7 +1040,7 @@ server.listen(PORT, () => {
   console.log(`  Port: ${PORT}`);
   console.log(`  Admin: ${ADMIN_USER} / ${ADMIN_PASS}`);
   console.log(`  Rooms: ${rooms.size}`);
-  console.log(`  Conversations: ${conversations.length}`);
+  console.log(`  Messages: ${messages.length}`);
   console.log(`  Admin panel: http://localhost:${PORT}`);
   console.log(`  WS Admin: ws://localhost:${PORT}/ws/admin`);
   console.log(`  WS Extension: ws://localhost:${PORT}/ws/ext`);

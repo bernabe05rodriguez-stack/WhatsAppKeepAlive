@@ -526,214 +526,83 @@ body {
 }
 
 /* ==========================================================
-   CONVERSATIONS
+   MESSAGES
    ========================================================== */
-.conversations-list {
+.messages-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
-.conversation-card {
+.message-card {
   background: var(--card-bg);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  gap: 0.75rem;
   transition: box-shadow var(--transition);
 }
 
-.conversation-card:hover {
+.message-card:hover {
   box-shadow: var(--shadow-lg);
 }
 
-.conversation-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.conversation-header:hover {
-  background: rgba(37, 211, 102, 0.03);
-}
-
-.conversation-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.conversation-id {
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--text);
-}
-
-.conversation-preview {
-  font-size: 0.85rem;
-  color: var(--text-light);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 500px;
-  margin-top: 0.15rem;
-}
-
-.conversation-badge {
-  background: var(--primary-light);
-  color: var(--primary-dark);
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  border-radius: 10px;
-  margin-left: 0.75rem;
-  white-space: nowrap;
-}
-
-.conversation-right {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: 1rem;
-}
-
-.conversation-expand {
-  font-size: 1.2rem;
-  color: var(--text-light);
-  transition: transform var(--transition);
-}
-
-.conversation-card.expanded .conversation-expand {
-  transform: rotate(180deg);
-}
-
-/* ---------- Conversation Turns (expanded) ---------- */
-.conversation-turns {
-  display: none;
-  border-top: 1px solid var(--border);
-  padding: 1rem 1.25rem;
-  background: #fafafa;
-}
-
-.conversation-card.expanded .conversation-turns {
-  display: block;
-}
-
-.turn-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-}
-
-.turn-row + .turn-row {
-  border-top: 1px dashed var(--border);
-}
-
-.turn-role {
+.message-number {
   flex-shrink: 0;
   width: 28px;
   height: 28px;
   border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #fff;
 }
 
-.turn-role.role-a {
-  background: var(--primary);
-}
-
-.turn-role.role-b {
-  background: #3498db;
-}
-
-.turn-message {
+.message-text {
+  flex: 1;
   font-size: 0.9rem;
   color: var(--text);
-  line-height: 1.5;
-  white-space: pre-wrap;
+  line-height: 1.4;
   word-break: break-word;
-  flex: 1;
 }
 
-/* ==========================================================
-   MODAL: CONVERSATION TURNS EDITOR
-   ========================================================== */
-.turns-container {
-  max-height: 400px;
-  overflow-y: auto;
-  margin-bottom: 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: #fafafa;
+.message-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
-.turn-edit-row {
+/* ---------- Pair exchange messages in room detail ---------- */
+.pair-messages {
+  margin-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.5rem;
+}
+
+.pair-msg-row {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-}
-
-.turn-edit-row + .turn-edit-row {
-  border-top: 1px solid var(--border);
-}
-
-.turn-edit-number {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-light);
-  padding-top: 0.6rem;
-  width: 20px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.turn-edit-role {
-  flex-shrink: 0;
-}
-
-.turn-edit-role select {
-  padding: 0.4rem;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
   font-size: 0.85rem;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--card-bg);
-  cursor: pointer;
 }
 
-.turn-edit-message {
-  flex: 1;
+.pair-msg-label {
+  flex-shrink: 0;
+  color: var(--text-light);
+  font-weight: 600;
+  font-size: 0.8rem;
 }
 
-.turn-edit-message textarea {
-  width: 100%;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.9rem;
-  font-family: var(--font);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  resize: vertical;
-  min-height: 50px;
-  outline: none;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-
-.turn-edit-message textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.15);
-}
-
-.turns-actions {
-  display: flex;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+.pair-msg-text {
+  color: var(--text);
+  word-break: break-word;
 }
 
 /* ==========================================================
@@ -935,44 +804,13 @@ body {
   font-weight: 700;
 }
 
-.pair-progress {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-light);
-}
-
-.pair-progress-bar {
-  flex: 1;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.pair-progress-fill {
-  height: 100%;
-  background: var(--primary);
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-
-.pair-message {
+.pair-detail-messages {
   font-size: 0.85rem;
   color: var(--text);
   background: #f8f8f8;
   padding: 0.4rem 0.6rem;
   border-radius: var(--radius-sm);
-  font-style: italic;
   word-break: break-word;
-}
-
-.pair-sender {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--primary-dark);
-  font-family: var(--font-mono);
 }
 
 .detail-empty {
@@ -1079,8 +917,8 @@ body {
     margin: 0.5rem;
   }
 
-  .conversation-preview {
-    max-width: 200px;
+  .message-text {
+    font-size: 0.85rem;
   }
 
   .activity-entry {

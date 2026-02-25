@@ -19,7 +19,7 @@
 
   // Cache de datos
   let roomsData = [];
-  let conversationsData = [];
+  let messagesData = [];
   let activityData = [];
   let lastStatusData = null; // Last WS status update
 
@@ -59,17 +59,15 @@
   const roomMinInterval = $('#room-min-interval');
   const roomMaxInterval = $('#room-max-interval');
 
-  // Conversations
-  const conversationsList = $('#conversations-list');
-  const conversationsEmpty = $('#conversations-empty');
-  const newConversationBtn = $('#new-conversation-btn');
-  const conversationModal = $('#conversation-modal');
-  const conversationModalTitle = $('#conversation-modal-title');
-  const conversationForm = $('#conversation-form');
-  const conversationEditId = $('#conversation-edit-id');
-  const turnsContainer = $('#turns-container');
-  const addTurnBtn = $('#add-turn-btn');
-  const removeTurnBtn = $('#remove-turn-btn');
+  // Messages
+  const messagesList = $('#messages-list');
+  const messagesEmpty = $('#messages-empty');
+  const newMessageBtn = $('#new-message-btn');
+  const messageModal = $('#message-modal');
+  const messageModalTitle = $('#message-modal-title');
+  const messageForm = $('#message-form');
+  const messageEditId = $('#message-edit-id');
+  const messageText = $('#message-text');
 
   // Activity
   const activityLog = $('#activity-log');
@@ -226,8 +224,8 @@
     // Cargar datos frescos
     if (tabName === 'rooms') {
       loadRooms();
-    } else if (tabName === 'conversations') {
-      loadConversations();
+    } else if (tabName === 'messages') {
+      loadMessages();
     } else if (tabName === 'activity') {
       loadActivity();
     }
@@ -286,7 +284,7 @@
 
       const pairsCount = (room.activePairs || []).length;
       const pairsInfo = pairsCount > 0
-        ? `<span class="room-pairs-count">${pairsCount} ${pairsCount === 1 ? 'conversacion' : 'conversaciones'}</span>`
+        ? `<span class="room-pairs-count">${pairsCount} ${pairsCount === 1 ? 'intercambio' : 'intercambios'}</span>`
         : '';
 
       return `<div class="room-card clickable" data-room-id="${room.id}" onclick="Admin.openRoomDetail('${room.id}')">
@@ -396,228 +394,116 @@
     openModal(confirmModal);
   }
 
-  // ===================== CONVERSATIONS =====================
+  // ===================== MESSAGES =====================
 
   /**
-   * Carga la lista de conversaciones desde el backend.
+   * Carga la lista de mensajes desde el backend.
    */
-  async function loadConversations() {
+  async function loadMessages() {
     try {
-      conversationsData = await api('/api/conversations');
-      renderConversations();
+      messagesData = await api('/api/messages');
+      renderMessages();
     } catch (err) {
-      console.error('Error cargando conversaciones:', err);
+      console.error('Error cargando mensajes:', err);
     }
   }
 
   /**
-   * Renderiza la lista de conversaciones.
+   * Renderiza la lista de mensajes.
    */
-  function renderConversations() {
-    if (!conversationsData || conversationsData.length === 0) {
-      conversationsList.innerHTML = '';
-      conversationsEmpty.hidden = false;
+  function renderMessages() {
+    if (!messagesData || messagesData.length === 0) {
+      messagesList.innerHTML = '';
+      messagesEmpty.hidden = false;
       return;
     }
 
-    conversationsEmpty.hidden = true;
-    conversationsList.innerHTML = conversationsData.map((conv, idx) => {
-      const turns = conv.turns || [];
-      const preview = turns.length > 0 ? escapeHtml(turns[0].message || '') : 'Sin mensajes';
-      const displayId = conv.name || conv.id || `#${idx + 1}`;
-
-      const turnsHtml = turns.map((turn) => {
-        const roleClass = (turn.role || 'A').toUpperCase() === 'A' ? 'role-a' : 'role-b';
-        const roleLabel = (turn.role || 'A').toUpperCase();
-        return `<div class="turn-row">
-          <span class="turn-role ${roleClass}">${roleLabel}</span>
-          <span class="turn-message">${escapeHtml(turn.message || '')}</span>
-        </div>`;
-      }).join('');
-
-      return `<div class="conversation-card" data-conv-id="${conv.id}">
-        <div class="conversation-header" onclick="Admin.toggleConversation(this)">
-          <div class="conversation-info">
-            <span class="conversation-id">${escapeHtml(String(displayId))}</span>
-            <div class="conversation-preview">${preview}</div>
-          </div>
-          <div class="conversation-right">
-            <span class="conversation-badge">${turns.length} ${turns.length === 1 ? 'turno' : 'turnos'}</span>
-            <button class="btn btn-outline btn-icon" onclick="event.stopPropagation(); Admin.editConversation('${conv.id}')" title="Editar">&#9998;</button>
-            <button class="btn btn-danger btn-icon" onclick="event.stopPropagation(); Admin.deleteConversation('${conv.id}')" title="Eliminar">&#128465;</button>
-            <span class="conversation-expand">&#9660;</span>
-          </div>
-        </div>
-        <div class="conversation-turns">
-          ${turnsHtml || '<p class="text-light" style="padding: 0.5rem 0;">Sin turnos definidos.</p>'}
+    messagesEmpty.hidden = true;
+    messagesList.innerHTML = messagesData.map((msg, idx) => {
+      const text = escapeHtml(msg.message || '');
+      return `<div class="message-card" data-msg-id="${msg.id}">
+        <span class="message-number">${idx + 1}</span>
+        <span class="message-text">${text}</span>
+        <div class="message-actions">
+          <button class="btn btn-outline btn-icon" onclick="Admin.editMessage('${msg.id}')" title="Editar">&#9998;</button>
+          <button class="btn btn-danger btn-icon" onclick="Admin.deleteMessage('${msg.id}')" title="Eliminar">&#128465;</button>
         </div>
       </div>`;
     }).join('');
   }
 
   /**
-   * Expande/colapsa una conversación.
+   * Abre el modal para crear un nuevo mensaje.
    */
-  function toggleConversation(headerEl) {
-    const card = headerEl.closest('.conversation-card');
-    if (card) {
-      card.classList.toggle('expanded');
-    }
+  function openNewMessageModal() {
+    messageModalTitle.textContent = 'Nuevo Mensaje';
+    messageForm.reset();
+    messageEditId.value = '';
+    openModal(messageModal);
   }
 
   /**
-   * Abre el modal para crear una nueva conversación.
+   * Abre el modal para editar un mensaje existente.
    */
-  function openNewConversationModal() {
-    conversationModalTitle.textContent = 'Nueva Conversación';
-    conversationForm.reset();
-    conversationEditId.value = '';
-    turnsContainer.innerHTML = '';
-    // Agregar dos turnos iniciales (A y B)
-    addTurn();
-    addTurn();
-    openModal(conversationModal);
+  function editMessage(msgId) {
+    const msg = messagesData.find((m) => m.id === msgId);
+    if (!msg) return;
+
+    messageModalTitle.textContent = 'Editar Mensaje';
+    messageEditId.value = msg.id;
+    messageText.value = msg.message || '';
+    openModal(messageModal);
   }
 
   /**
-   * Abre el modal para editar una conversación existente.
+   * Guarda (crea o actualiza) un mensaje.
    */
-  function editConversation(convId) {
-    const conv = conversationsData.find((c) => c.id === convId);
-    if (!conv) return;
-
-    conversationModalTitle.textContent = 'Editar Conversación';
-    conversationEditId.value = conv.id;
-    turnsContainer.innerHTML = '';
-
-    const turns = conv.turns || [];
-    if (turns.length === 0) {
-      addTurn();
-      addTurn();
-    } else {
-      turns.forEach((turn) => {
-        addTurn(turn.role, turn.message);
-      });
-    }
-
-    openModal(conversationModal);
-  }
-
-  /**
-   * Agrega un turno al editor de conversación.
-   * @param {string} role - "A" o "B" (auto-alterna si no se especifica)
-   * @param {string} message - Texto del mensaje
-   */
-  function addTurn(role, message) {
-    const existingTurns = turnsContainer.querySelectorAll('.turn-edit-row');
-    const turnNum = existingTurns.length + 1;
-
-    // Auto-alternar rol si no se especifica
-    if (!role) {
-      if (existingTurns.length === 0) {
-        role = 'A';
-      } else {
-        const lastSelect = existingTurns[existingTurns.length - 1].querySelector('select');
-        role = lastSelect.value === 'A' ? 'B' : 'A';
-      }
-    }
-
-    const row = document.createElement('div');
-    row.className = 'turn-edit-row';
-    row.innerHTML = `
-      <span class="turn-edit-number">${turnNum}</span>
-      <div class="turn-edit-role">
-        <select>
-          <option value="A" ${role === 'A' ? 'selected' : ''}>A</option>
-          <option value="B" ${role === 'B' ? 'selected' : ''}>B</option>
-        </select>
-      </div>
-      <div class="turn-edit-message">
-        <textarea placeholder="Mensaje del turno ${turnNum}..." rows="2">${escapeHtml(message || '')}</textarea>
-      </div>
-    `;
-
-    turnsContainer.appendChild(row);
-    // Scroll al nuevo turno
-    turnsContainer.scrollTop = turnsContainer.scrollHeight;
-  }
-
-  /**
-   * Elimina el último turno del editor.
-   */
-  function removeLastTurn() {
-    const rows = turnsContainer.querySelectorAll('.turn-edit-row');
-    if (rows.length > 1) {
-      rows[rows.length - 1].remove();
-    }
-  }
-
-  /**
-   * Lee los turnos del editor y los devuelve como array.
-   * @returns {Array<{role: string, message: string}>}
-   */
-  function getTurnsFromEditor() {
-    const rows = turnsContainer.querySelectorAll('.turn-edit-row');
-    const turns = [];
-    rows.forEach((row) => {
-      const role = row.querySelector('select').value;
-      const message = row.querySelector('textarea').value.trim();
-      if (message) {
-        turns.push({ role, message });
-      }
-    });
-    return turns;
-  }
-
-  /**
-   * Guarda (crea o actualiza) una conversación.
-   */
-  async function saveConversation(e) {
+  async function saveMessage(e) {
     e.preventDefault();
 
-    const id = conversationEditId.value;
-    const turns = getTurnsFromEditor();
+    const id = messageEditId.value;
+    const text = messageText.value.trim();
 
-    if (turns.length === 0) {
-      alert('Agregá al menos un turno con texto.');
+    if (!text) {
+      alert('Escribí un texto para el mensaje.');
       return;
     }
 
-    const body = { turns };
+    const body = { message: text };
 
     try {
       if (id) {
-        await api(`/api/conversations/${id}`, {
+        await api(`/api/messages/${id}`, {
           method: 'PUT',
           body: JSON.stringify(body),
         });
       } else {
-        await api('/api/conversations', {
+        await api('/api/messages', {
           method: 'POST',
           body: JSON.stringify(body),
         });
       }
 
-      closeModal(conversationModal);
-      await loadConversations();
+      closeModal(messageModal);
+      await loadMessages();
     } catch (err) {
-      alert('Error al guardar la conversación: ' + err.message);
+      alert('Error al guardar el mensaje: ' + err.message);
     }
   }
 
   /**
-   * Solicita confirmación y elimina una conversación.
+   * Solicita confirmación y elimina un mensaje.
    */
-  function deleteConversation(convId) {
-    const conv = conversationsData.find((c) => c.id === convId);
-    const name = conv?.name || conv?.id || convId;
-    confirmMessage.textContent = `¿Estás seguro de que querés eliminar la conversación "${name}"?`;
+  function deleteMessage(msgId) {
+    const msg = messagesData.find((m) => m.id === msgId);
+    const preview = msg ? msg.message.substring(0, 40) + (msg.message.length > 40 ? '...' : '') : msgId;
+    confirmMessage.textContent = `¿Estás seguro de que querés eliminar el mensaje "${preview}"?`;
     pendingDeleteCallback = async () => {
       try {
-        await api(`/api/conversations/${convId}`, { method: 'DELETE' });
-        await loadConversations();
+        await api(`/api/messages/${msgId}`, { method: 'DELETE' });
+        await loadMessages();
       } catch (err) {
-        alert('Error al eliminar la conversación: ' + err.message);
+        alert('Error al eliminar el mensaje: ' + err.message);
       }
     };
     openModal(confirmModal);
@@ -906,27 +792,25 @@
 
     // Active pairs
     if (pairs.length === 0) {
-      roomDetailPairs.innerHTML = '<div class="detail-empty">Sin conversaciones activas</div>';
+      roomDetailPairs.innerHTML = '<div class="detail-empty">Sin intercambios activos</div>';
     } else {
       roomDetailPairs.innerHTML = pairs.map((pair) => {
-        const pct = pair.totalTurns > 0 ? Math.round((pair.currentTurn / pair.totalTurns) * 100) : 0;
-        const senderLabel = pair.currentSender
-          ? `<span class="pair-sender">${escapeHtml(pair.currentSender)} dice:</span>`
-          : '';
-        const msgHtml = pair.currentMessage
-          ? `<div class="pair-message">${senderLabel} ${escapeHtml(pair.currentMessage)}</div>`
-          : '';
         return `<div class="pair-card">
           <div class="pair-phones">
             <span>${escapeHtml(pair.phoneA)}</span>
             <span class="pair-arrow">&harr;</span>
             <span>${escapeHtml(pair.phoneB)}</span>
           </div>
-          <div class="pair-progress">
-            <span>Turno ${pair.currentTurn}/${pair.totalTurns}</span>
-            <div class="pair-progress-bar"><div class="pair-progress-fill" style="width:${pct}%"></div></div>
+          <div class="pair-messages">
+            <div class="pair-msg-row">
+              <span class="pair-msg-label">${escapeHtml(pair.phoneA)} &rarr;</span>
+              <span class="pair-msg-text">${escapeHtml(pair.messageA || '')}</span>
+            </div>
+            <div class="pair-msg-row">
+              <span class="pair-msg-label">${escapeHtml(pair.phoneB)} &rarr;</span>
+              <span class="pair-msg-text">${escapeHtml(pair.messageB || '')}</span>
+            </div>
           </div>
-          ${msgHtml}
         </div>`;
       }).join('');
     }
@@ -1038,11 +922,9 @@
   newRoomBtn.addEventListener('click', openNewRoomModal);
   roomForm.addEventListener('submit', saveRoom);
 
-  // Conversation modal
-  newConversationBtn.addEventListener('click', openNewConversationModal);
-  conversationForm.addEventListener('submit', saveConversation);
-  addTurnBtn.addEventListener('click', () => addTurn());
-  removeTurnBtn.addEventListener('click', removeLastTurn);
+  // Message modal
+  newMessageBtn.addEventListener('click', openNewMessageModal);
+  messageForm.addEventListener('submit', saveMessage);
 
   // Activity
   clearActivityBtn.addEventListener('click', clearActivity);
@@ -1085,9 +967,8 @@
   window.Admin = {
     editRoom,
     deleteRoom,
-    editConversation,
-    deleteConversation,
-    toggleConversation,
+    editMessage,
+    deleteMessage,
     openRoomDetail,
   };
 
