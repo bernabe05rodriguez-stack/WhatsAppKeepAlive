@@ -72,14 +72,15 @@
       <div id="messages-tab" class="tab-panel">
         <div class="tab-header">
           <h2>Mensajes</h2>
-          <button class="btn btn-primary" id="new-message-btn">+ Nuevo Mensaje</button>
+          <span id="messages-count" class="messages-count-badge"></span>
         </div>
-        <div id="messages-list" class="messages-list">
+        <p class="tab-subtitle">Impares = pregunta, pares = respuesta. Se rotan en orden.</p>
+        <div id="messages-chat" class="messages-chat">
           <!-- Se llena dinámicamente -->
         </div>
-        <div id="messages-empty" class="empty-state" hidden>
-          <p>No hay mensajes creados.</p>
-          <p class="text-light">Los mensajes se envían aleatoriamente entre los números emparejados.</p>
+        <div class="messages-input-area">
+          <input type="text" id="message-input" placeholder="Escribi un mensaje..." autocomplete="off">
+          <button class="btn btn-primary btn-sm" id="add-message-btn">Agregar</button>
         </div>
       </div>
 
@@ -136,27 +137,6 @@
     </div>
   </div>
 
-  <!-- ==================== MODAL: MENSAJE ==================== -->
-  <div id="message-modal" class="modal-overlay" hidden>
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="message-modal-title">Nuevo Mensaje</h3>
-        <button class="modal-close" data-close="message-modal">&times;</button>
-      </div>
-      <form id="message-form">
-        <input type="hidden" id="message-edit-id">
-        <div class="form-group">
-          <label for="message-text">Texto del mensaje</label>
-          <textarea id="message-text" rows="3" placeholder="Ej: Hola! Como andas?" required></textarea>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-outline" data-close="message-modal">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <!-- ==================== MODAL: CONFIRMAR ELIMINACIÓN ==================== -->
   <div id="confirm-modal" class="modal-overlay" hidden>
     <div class="modal modal-sm">
@@ -181,11 +161,6 @@
       </div>
       <div class="room-detail-body">
         <div class="room-detail-meta" id="room-detail-meta"></div>
-
-        <div class="room-detail-section">
-          <h4 class="room-detail-section-title">Intercambios activos</h4>
-          <div id="room-detail-pairs"></div>
-        </div>
 
         <div class="room-detail-section">
           <h4 class="room-detail-section-title">Usuarios conectados</h4>

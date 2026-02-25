@@ -60,14 +60,10 @@
   const roomMaxInterval = $('#room-max-interval');
 
   // Messages
-  const messagesList = $('#messages-list');
-  const messagesEmpty = $('#messages-empty');
-  const newMessageBtn = $('#new-message-btn');
-  const messageModal = $('#message-modal');
-  const messageModalTitle = $('#message-modal-title');
-  const messageForm = $('#message-form');
-  const messageEditId = $('#message-edit-id');
-  const messageText = $('#message-text');
+  const messagesChat = $('#messages-chat');
+  const messagesCount = $('#messages-count');
+  const messageInput = $('#message-input');
+  const addMessageBtn = $('#add-message-btn');
 
   // Activity
   const activityLog = $('#activity-log');
@@ -78,7 +74,6 @@
   const roomDetailModal = $('#room-detail-modal');
   const roomDetailTitle = $('#room-detail-title');
   const roomDetailMeta = $('#room-detail-meta');
-  const roomDetailPairs = $('#room-detail-pairs');
   const roomDetailUsers = $('#room-detail-users');
   const roomDetailActivity = $('#room-detail-activity');
 
@@ -282,10 +277,6 @@
              <p class="room-no-phones">Sin números conectados</p>
            </div>`;
 
-      const pairsCount = (room.activePairs || []).length;
-      const pairsInfo = pairsCount > 0
-        ? `<span class="room-pairs-count">${pairsCount} ${pairsCount === 1 ? 'intercambio' : 'intercambios'}</span>`
-        : '';
 
       return `<div class="room-card clickable" data-room-id="${room.id}" onclick="Admin.openRoomDetail('${room.id}')">
         <div class="room-card-header">
@@ -301,7 +292,6 @@
             <span class="dot"></span>
             ${userCount} ${userCount === 1 ? 'usuario' : 'usuarios'}
           </span>
-          ${pairsInfo}
         </div>
         ${phonesSection}
       </div>`;
@@ -396,9 +386,6 @@
 
   // ===================== MESSAGES =====================
 
-  /**
-   * Carga la lista de mensajes desde el backend.
-   */
   async function loadMessages() {
     try {
       messagesData = await api('/api/messages');
@@ -408,102 +395,55 @@
     }
   }
 
-  /**
-   * Renderiza la lista de mensajes.
-   */
   function renderMessages() {
+    messagesCount.textContent = messagesData.length + ' mensajes';
+
     if (!messagesData || messagesData.length === 0) {
-      messagesList.innerHTML = '';
-      messagesEmpty.hidden = false;
+      messagesChat.innerHTML = '<div class="detail-empty">Sin mensajes. Agregá uno abajo.</div>';
       return;
     }
 
-    messagesEmpty.hidden = true;
-    messagesList.innerHTML = messagesData.map((msg, idx) => {
+    messagesChat.innerHTML = messagesData.map((msg, idx) => {
+      const isQuestion = idx % 2 === 0;
+      const bubbleClass = isQuestion ? 'chat-bubble-question' : 'chat-bubble-response';
+      const label = isQuestion ? 'Pregunta' : 'Respuesta';
       const text = escapeHtml(msg.message || '');
-      return `<div class="message-card" data-msg-id="${msg.id}">
-        <span class="message-number">${idx + 1}</span>
-        <span class="message-text">${text}</span>
-        <div class="message-actions">
-          <button class="btn btn-outline btn-icon" onclick="Admin.editMessage('${msg.id}')" title="Editar">&#9998;</button>
-          <button class="btn btn-danger btn-icon" onclick="Admin.deleteMessage('${msg.id}')" title="Eliminar">&#128465;</button>
-        </div>
+      return `<div class="chat-bubble ${bubbleClass}">
+        <span class="chat-label">${label} ${idx + 1}</span>
+        <span class="chat-text">${text}</span>
+        <button class="chat-delete" onclick="Admin.deleteMessage('${msg.id}')" title="Eliminar">&times;</button>
       </div>`;
     }).join('');
+
+    messagesChat.scrollTop = messagesChat.scrollHeight;
   }
 
-  /**
-   * Abre el modal para crear un nuevo mensaje.
-   */
-  function openNewMessageModal() {
-    messageModalTitle.textContent = 'Nuevo Mensaje';
-    messageForm.reset();
-    messageEditId.value = '';
-    openModal(messageModal);
-  }
-
-  /**
-   * Abre el modal para editar un mensaje existente.
-   */
-  function editMessage(msgId) {
-    const msg = messagesData.find((m) => m.id === msgId);
-    if (!msg) return;
-
-    messageModalTitle.textContent = 'Editar Mensaje';
-    messageEditId.value = msg.id;
-    messageText.value = msg.message || '';
-    openModal(messageModal);
-  }
-
-  /**
-   * Guarda (crea o actualiza) un mensaje.
-   */
-  async function saveMessage(e) {
-    e.preventDefault();
-
-    const id = messageEditId.value;
-    const text = messageText.value.trim();
-
-    if (!text) {
-      alert('Escribí un texto para el mensaje.');
-      return;
-    }
-
-    const body = { message: text };
+  async function addMessage() {
+    const text = messageInput.value.trim();
+    if (!text) { messageInput.focus(); return; }
 
     try {
-      if (id) {
-        await api(`/api/messages/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(body),
-        });
-      } else {
-        await api('/api/messages', {
-          method: 'POST',
-          body: JSON.stringify(body),
-        });
-      }
-
-      closeModal(messageModal);
+      await api('/api/messages', {
+        method: 'POST',
+        body: JSON.stringify({ message: text }),
+      });
+      messageInput.value = '';
       await loadMessages();
     } catch (err) {
-      alert('Error al guardar el mensaje: ' + err.message);
+      alert('Error al agregar mensaje: ' + err.message);
     }
   }
 
-  /**
-   * Solicita confirmación y elimina un mensaje.
-   */
   function deleteMessage(msgId) {
     const msg = messagesData.find((m) => m.id === msgId);
     const preview = msg ? msg.message.substring(0, 40) + (msg.message.length > 40 ? '...' : '') : msgId;
-    confirmMessage.textContent = `¿Estás seguro de que querés eliminar el mensaje "${preview}"?`;
+    confirmMessage.textContent = `Eliminar mensaje "${preview}"?`;
     pendingDeleteCallback = async () => {
       try {
         await api(`/api/messages/${msgId}`, { method: 'DELETE' });
         await loadMessages();
       } catch (err) {
-        alert('Error al eliminar el mensaje: ' + err.message);
+        alert('Error al eliminar: ' + err.message);
       }
     };
     openModal(confirmModal);
@@ -779,7 +719,6 @@
 
     // Meta info
     const users = room.users || [];
-    const pairs = room.activePairs || [];
     const userCount = users.length;
     const emptyClass = userCount === 0 ? 'empty' : '';
     roomDetailMeta.innerHTML = `
@@ -789,31 +728,6 @@
         ${userCount} ${userCount === 1 ? 'usuario' : 'usuarios'}
       </span>
     `;
-
-    // Active pairs
-    if (pairs.length === 0) {
-      roomDetailPairs.innerHTML = '<div class="detail-empty">Sin intercambios activos</div>';
-    } else {
-      roomDetailPairs.innerHTML = pairs.map((pair) => {
-        return `<div class="pair-card">
-          <div class="pair-phones">
-            <span>${escapeHtml(pair.phoneA)}</span>
-            <span class="pair-arrow">&harr;</span>
-            <span>${escapeHtml(pair.phoneB)}</span>
-          </div>
-          <div class="pair-messages">
-            <div class="pair-msg-row">
-              <span class="pair-msg-label">${escapeHtml(pair.phoneA)} &rarr;</span>
-              <span class="pair-msg-text">${escapeHtml(pair.messageA || '')}</span>
-            </div>
-            <div class="pair-msg-row">
-              <span class="pair-msg-label">${escapeHtml(pair.phoneB)} &rarr;</span>
-              <span class="pair-msg-text">${escapeHtml(pair.messageB || '')}</span>
-            </div>
-          </div>
-        </div>`;
-      }).join('');
-    }
 
     // Users
     if (users.length === 0) {
@@ -922,9 +836,11 @@
   newRoomBtn.addEventListener('click', openNewRoomModal);
   roomForm.addEventListener('submit', saveRoom);
 
-  // Message modal
-  newMessageBtn.addEventListener('click', openNewMessageModal);
-  messageForm.addEventListener('submit', saveMessage);
+  // Messages
+  addMessageBtn.addEventListener('click', addMessage);
+  messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addMessage();
+  });
 
   // Activity
   clearActivityBtn.addEventListener('click', clearActivity);
@@ -967,7 +883,6 @@
   window.Admin = {
     editRoom,
     deleteRoom,
-    editMessage,
     deleteMessage,
     openRoomDetail,
   };
