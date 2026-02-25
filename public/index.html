@@ -71,16 +71,14 @@
       <!-- ========== TAB: MENSAJES ========== -->
       <div id="messages-tab" class="tab-panel">
         <div class="tab-header">
-          <h2>Mensajes</h2>
-          <span id="messages-count" class="messages-count-badge"></span>
+          <h2>Mensajes <span id="messages-count" class="messages-count-badge"></span></h2>
         </div>
-        <p class="tab-subtitle">Impares = pregunta, pares = respuesta. Se rotan en orden.</p>
-        <div id="messages-chat" class="messages-chat">
+        <div id="messages-list" class="messages-plain-list">
           <!-- Se llena dinámicamente -->
         </div>
         <div class="messages-input-area">
-          <input type="text" id="message-input" placeholder="Escribi un mensaje..." autocomplete="off">
-          <button class="btn btn-primary btn-sm" id="add-message-btn">Agregar</button>
+          <input type="text" id="message-input" placeholder="Agregar mensaje..." autocomplete="off">
+          <button class="btn btn-primary btn-sm" id="add-message-btn">+</button>
         </div>
       </div>
 

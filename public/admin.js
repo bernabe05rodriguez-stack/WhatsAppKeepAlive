@@ -60,7 +60,7 @@
   const roomMaxInterval = $('#room-max-interval');
 
   // Messages
-  const messagesChat = $('#messages-chat');
+  const messagesList = $('#messages-list');
   const messagesCount = $('#messages-count');
   const messageInput = $('#message-input');
   const addMessageBtn = $('#add-message-btn');
@@ -396,26 +396,21 @@
   }
 
   function renderMessages() {
-    messagesCount.textContent = messagesData.length + ' mensajes';
+    messagesCount.textContent = '(' + messagesData.length + ')';
 
     if (!messagesData || messagesData.length === 0) {
-      messagesChat.innerHTML = '<div class="detail-empty">Sin mensajes. Agregá uno abajo.</div>';
+      messagesList.innerHTML = '<div class="detail-empty">Sin mensajes. Agregá uno abajo.</div>';
       return;
     }
 
-    messagesChat.innerHTML = messagesData.map((msg, idx) => {
-      const isQuestion = idx % 2 === 0;
-      const bubbleClass = isQuestion ? 'chat-bubble-question' : 'chat-bubble-response';
-      const label = isQuestion ? 'Pregunta' : 'Respuesta';
+    messagesList.innerHTML = messagesData.map((msg, idx) => {
       const text = escapeHtml(msg.message || '');
-      return `<div class="chat-bubble ${bubbleClass}">
-        <span class="chat-label">${label} ${idx + 1}</span>
-        <span class="chat-text">${text}</span>
-        <button class="chat-delete" onclick="Admin.deleteMessage('${msg.id}')" title="Eliminar">&times;</button>
+      return `<div class="msg-row">
+        <span class="msg-num">${idx + 1}.</span>
+        <span class="msg-text">${text}</span>
+        <button class="msg-del" onclick="Admin.deleteMessage('${msg.id}')" title="Eliminar">&times;</button>
       </div>`;
     }).join('');
-
-    messagesChat.scrollTop = messagesChat.scrollHeight;
   }
 
   async function addMessage() {

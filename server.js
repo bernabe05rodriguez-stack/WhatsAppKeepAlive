@@ -411,6 +411,11 @@ function checkAndPair(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
 
+  // Only 1 active pair per room at a time
+  for (const [, pair] of activePairs) {
+    if (pair.roomId === roomId) return; // already has an active exchange
+  }
+
   // Get all available users in this room (exclude cooldown)
   const available = [];
   for (const [phone, user] of extUsers) {
@@ -428,39 +433,34 @@ function checkAndPair(roomId) {
 
   shuffle(available);
 
-  // Try to pair users avoiding recent partners
-  while (available.length >= 2) {
-    const userA = available.pop();
-
-    // Find best partner: prefer someone who wasn't A's last partner
-    let bestIdx = 0;
-    for (let i = 0; i < available.length; i++) {
-      if (lastPartner.get(userA.phone) !== available[i].phone) {
-        bestIdx = i;
-        break;
-      }
+  // Pick 1 pair, preferring someone who wasn't A's last partner
+  const userA = available.pop();
+  let bestIdx = 0;
+  for (let i = 0; i < available.length; i++) {
+    if (lastPartner.get(userA.phone) !== available[i].phone) {
+      bestIdx = i;
+      break;
     }
-    const userB = available.splice(bestIdx, 1)[0];
-
-    // Mark as busy immediately
-    userA.available = false;
-    userB.available = false;
-
-    // Track partners for rotation
-    lastPartner.set(userA.phone, userB.phone);
-    lastPartner.set(userB.phone, userA.phone);
-
-    // Get next 2 messages from rotating list
-    const msgA = messages[messageIndex % messages.length].message;
-    const msgB = messages[(messageIndex + 1) % messages.length].message;
-    messageIndex += 2;
-
-    logActivity(roomId, 'pair', `${userA.phone} <-> ${userB.phone}`);
-    broadcastStatus();
-
-    // Run exchange asynchronously (both send at the same time)
-    runExchange(roomId, userA, userB, msgA, msgB);
   }
+  const userB = available[bestIdx];
+
+  // Mark as busy
+  userA.available = false;
+  userB.available = false;
+
+  // Track partners for rotation
+  lastPartner.set(userA.phone, userB.phone);
+  lastPartner.set(userB.phone, userA.phone);
+
+  // Get next 2 messages from rotating list
+  const msgA = messages[messageIndex % messages.length].message;
+  const msgB = messages[(messageIndex + 1) % messages.length].message;
+  messageIndex += 2;
+
+  logActivity(roomId, 'pair', `${userA.phone} <-> ${userB.phone}`);
+  broadcastStatus();
+
+  runExchange(roomId, userA, userB, msgA, msgB);
 }
 
 async function runExchange(roomId, userA, userB, msgA, msgB) {
