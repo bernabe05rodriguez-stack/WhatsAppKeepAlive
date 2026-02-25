@@ -220,9 +220,17 @@ function processMessageQueue() {
       navigateToSendUrl(phone, data.message);
     });
   } else {
-    // Chat diferente → navegar a URL (una sola recarga)
-    log('Nuevo destino, navegando via URL');
-    navigateToSendUrl(phone, data.message);
+    // Chat diferente → buscar en WA sin recargar (fallback a URL solo si no encuentra)
+    log('Nuevo destino, intentando search-and-send');
+    state.currentChatPhone = phone;
+    chrome.tabs.sendMessage(state.waTabId, {
+      type: 'search-and-send',
+      data: { phone, message: data.message },
+    }).catch(() => {
+      // Content script no responde, caer a URL
+      log('Content script no responde para search, cayendo a URL');
+      navigateToSendUrl(phone, data.message);
+    });
   }
 }
 

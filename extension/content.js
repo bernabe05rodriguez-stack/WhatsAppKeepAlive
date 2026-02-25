@@ -258,12 +258,164 @@
     }
   }
 
+  // =============================================
+  // MODO 3: search-and-send (buscar contacto sin recarga)
+  // =============================================
+
+  async function searchAndSend(phone, message) {
+    log('search-and-send: phone=' + phone);
+    showSendingOverlay();
+
+    try {
+      // 1. Find search box in left panel
+      let searchBox = document.querySelector('[data-tab="3"]');
+      if (!searchBox) {
+        log('Search box not found, fallback to URL');
+        hideSendingOverlay();
+        fallbackToUrl(phone, message);
+        return;
+      }
+
+      // 2. Click, focus, and clear existing search
+      searchBox.click();
+      searchBox.focus();
+      await sleep(300);
+      if (searchBox.tagName === 'INPUT') {
+        searchBox.value = '';
+        searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+      }
+      await sleep(200);
+
+      // 3. Type phone number
+      if (searchBox.tagName === 'INPUT') {
+        searchBox.value = phone;
+        searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        document.execCommand('insertText', false, phone);
+      }
+      await sleep(2000); // Wait for search results to load
+
+      // 4. Find matching result
+      const result = await waitForSearchResult(phone, 3000);
+
+      if (!result) {
+        log('Contact not found in search, fallback to URL');
+        // Clear search before navigating
+        searchBox = document.querySelector('[data-tab="3"]');
+        if (searchBox) {
+          searchBox.focus();
+          if (searchBox.tagName === 'INPUT') {
+            searchBox.value = '';
+            searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+          } else {
+            document.execCommand('selectAll', false, null);
+            document.execCommand('delete', false, null);
+          }
+        }
+        await sleep(300);
+        hideSendingOverlay();
+        fallbackToUrl(phone, message);
+        return;
+      }
+
+      // 5. Click result to open chat
+      log('Found contact, opening chat');
+      result.click();
+      await sleep(1000);
+
+      // 6. Type and send message
+      const input = await waitForMessageInput(5000);
+      if (!input) {
+        log('Message input not found after opening chat');
+        hideSendingOverlay();
+        reportResult(false);
+        return;
+      }
+
+      input.focus();
+      await sleep(300);
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+      await sleep(100);
+      document.execCommand('insertText', false, message);
+      await sleep(500);
+
+      const sendBtn = await waitForSendButton(5000);
+      if (sendBtn) {
+        sendBtn.click();
+      } else {
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
+        }));
+      }
+
+      await sleep(1000);
+      hideSendingOverlay();
+      log('Message sent via search-and-send');
+      reportResult(true);
+
+    } catch (e) {
+      log('Error in searchAndSend:', e);
+      hideSendingOverlay();
+      reportResult(false);
+    }
+  }
+
+  async function waitForSearchResult(phone, timeout) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const result = findSearchResult(phone);
+      if (result) return result;
+      await sleep(500);
+    }
+    return null;
+  }
+
+  function findSearchResult(phone) {
+    const phoneClean = phone.replace(/[^0-9]/g, '');
+    // Use last 10 digits for matching (handles country code variations)
+    const phoneEnd = phoneClean.length > 10 ? phoneClean.slice(-10) : phoneClean;
+
+    // Look for span[title] in side panel matching the phone number
+    const titles = document.querySelectorAll('#pane-side span[title]');
+    for (const el of titles) {
+      const titleClean = (el.getAttribute('title') || '').replace(/[^0-9]/g, '');
+      if (!titleClean || titleClean.length < 7) continue;
+      const titleEnd = titleClean.length > 10 ? titleClean.slice(-10) : titleClean;
+
+      if (phoneEnd === titleEnd) {
+        // Get the clickable parent row
+        const row = el.closest('[data-testid="cell-frame-container"]')
+          || el.closest('[role="listitem"]')
+          || el.closest('[role="row"]')
+          || el.closest('div[tabindex="-1"]');
+        if (row) return row;
+      }
+    }
+
+    return null;
+  }
+
+  function fallbackToUrl(phone, message) {
+    log('Fallback: navigating to /send URL (will reload once)');
+    window.location.href = 'https://web.whatsapp.com/send?phone=' + phone + '&text=' + encodeURIComponent(message);
+    // Page will reload, new content script instance will handle the /send URL via handleSendUrl()
+  }
+
   // --- Escuchar mensajes del background ---
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'type-and-send') {
       const data = msg.data || {};
       typeAndSend(data.message);
+      sendResponse({ ok: true });
+    }
+    if (msg.type === 'search-and-send') {
+      const data = msg.data || {};
+      searchAndSend(data.phone, data.message);
       sendResponse({ ok: true });
     }
     if (msg.type === 'check-status') {
