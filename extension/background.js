@@ -566,6 +566,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+// --- Auto-update check ---
+
+let knownExtVersion = null;
+
+async function checkForExtUpdate() {
+  if (!state.serverUrl) return;
+  try {
+    const resp = await fetch(state.serverUrl + '/api/ext-version');
+    const data = await resp.json();
+    if (knownExtVersion && data.version !== knownExtVersion) {
+      log('Extension update detected! version:', knownExtVersion, '->', data.version, '- Reloading...');
+      chrome.runtime.reload();
+      return;
+    }
+    knownExtVersion = data.version;
+  } catch (_) {
+    // Server unreachable, skip
+  }
+}
+
 // --- Keep-alive Alarm ---
 
 chrome.alarms.create('keepalive', { periodInMinutes: 0.5 });
@@ -573,6 +593,9 @@ chrome.alarms.create('keepalive', { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepalive') {
     log('Keepalive alarm fired');
+
+    // Check for extension updates
+    checkForExtUpdate();
 
     // If we should be connected but WS is dead, reconnect with jitter
     if (state.connected && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
@@ -595,6 +618,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   await loadState();
   if (state.serverUrl) {
     connectWS();
+    checkForExtUpdate(); // store initial version
   }
 });
 
@@ -604,5 +628,6 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (state.serverUrl && state.connected) {
     log('Service worker woke up, reconnecting...');
     connectWS();
+    checkForExtUpdate(); // store initial version
   }
 })();

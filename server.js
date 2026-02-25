@@ -23,6 +23,20 @@ const DATA_DIR = path.join(__dirname, 'data');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
 const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
 const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
+const EXT_DIR = path.join(__dirname, 'extension');
+
+// Compute hash of extension files at startup (changes on redeploy)
+function computeExtVersion() {
+  const files = ['background.js', 'content.js', 'popup.js', 'popup.html', 'popup.css', 'manifest.json'];
+  let combined = '';
+  for (const f of files) {
+    try {
+      combined += fs.readFileSync(path.join(EXT_DIR, f), 'utf-8');
+    } catch (_) {}
+  }
+  return crypto.createHash('md5').update(combined).digest('hex').substring(0, 8);
+}
+const EXT_VERSION = computeExtVersion();
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -682,6 +696,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // REST API
 // =============================================================================
 
+// --- Extension version (for auto-reload) ---
+app.get('/api/ext-version', (req, res) => {
+  res.json({ version: EXT_VERSION });
+});
+
 // --- Login (with rate limiting) ---
 app.post('/api/login', (req, res) => {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -1124,6 +1143,7 @@ server.listen(PORT, () => {
   console.log(`  Admin panel: http://localhost:${PORT}`);
   console.log(`  WS Admin: ws://localhost:${PORT}/ws/admin`);
   console.log(`  WS Extension: ws://localhost:${PORT}/ws/ext`);
+  console.log(`  Extension version: ${EXT_VERSION}`);
   console.log('='.repeat(60));
 });
 
